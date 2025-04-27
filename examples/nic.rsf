@@ -1,0 +1,64 @@
+use ethernet;
+use cei;
+
+/// Number of lanes per phy.
+enum<2> Lanes {
+	/// One lane per phy
+	Single = 0b000,
+
+	/// Two lambda lanes per phy
+	L2 = 0b001,
+
+	/// Four lambda lanes per phy
+	L4 = 0b010,
+
+	/// Two fiber lanes per phy
+	F2 = 0b011,
+
+	/// Four fiber lanes per phy
+	F4 = 0b100,
+}
+
+
+/// Configuration for an Ethernet physical interface (phy).
+register<32> PhyConfig {
+	/// Data rate the phy is operating at.
+	speed: rw ethernet::DataRate,
+
+	/// Signal reach the phy is configured for.
+	reach: rw ethernet::Reach,
+
+	/// Number of lanes the phy is using.
+	lanes: rw Lanes,
+
+	/// Type of forward error correction to use.
+	fec: rw ethernet::Fec,
+
+	/// Type of modulation used on the wire.
+	modulation: rw cei::Modulation,
+
+	_: reserved ...
+}
+
+/// Status of an Ethernet physical interface (phy).
+register<32> PhyStatus {
+	/// Indicates if a carrier signal is detected.
+	carrier: ro bool,
+
+	/// Indicates if a signal error has been recieved by the MAU.
+	signal_error: ro bool,
+
+	/// Indicates that data in the signal received from the MAU is valid.
+	data_valid: ro bool,
+
+	_: reserved ...
+}
+
+block Phy {
+	config: PhyConfig @ 0x200,
+	status: PhyStatus @ 0x400,
+}
+
+block Nic {
+	phys: Phy[4; 0x1000] @ 0x6000,
+}

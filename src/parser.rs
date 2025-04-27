@@ -1,0 +1,519 @@
+//! RSF text format parser
+
+use crate::{
+    ast::{
+        Ast, Block, BlockElement, Component, Enum, Field, Identifier,
+        ModulePath, Number, QualifiedType, Register, Type, Use,
+    },
+    common::{Alternative, FieldMode},
+};
+use winnow::{
+    LocatingSlice, ModalResult, Parser,
+    ascii::{
+        alpha1, alphanumeric1, digit1, hex_digit1, line_ending, multispace0,
+        multispace1, till_line_ending,
+    },
+    combinator::{alt, cut_err, delimited, repeat, separated, trace},
+    error::{ContextError, ErrMode},
+};
+
+pub type Input<'i> = LocatingSlice<&'i str>;
+
+#[derive(Debug)]
+pub enum Top {
+    Comment,
+    Use(Use),
+    Enum(Enum),
+    Register(Register),
+    Block(Block),
+}
+
+pub fn parse(input: &mut Input) -> ModalResult<Ast> {
+    let mut ast = Ast::default();
+    let top = parse_top(input)?;
+    for t in top.into_iter() {
+        match t {
+            Top::Comment => {}
+            Top::Use(x) => ast.use_statements.push(x),
+            Top::Enum(x) => ast.enums.push(x),
+            Top::Register(x) => ast.registers.push(x),
+            Top::Block(x) => ast.blocks.push(x),
+        }
+    }
+    Ok(ast)
+}
+
+macro_rules! tr {
+    ($name:ident) => {
+        trace(stringify!($name), $name)
+    };
+}
+
+pub fn parse_top(input: &mut Input) -> ModalResult<Vec<Top>> {
+    let result = cut_err(repeat(
+        0..,
+        alt((
+            tr!(parse_use_top),
+            tr!(parse_enum_top),
+            tr!(parse_reg_top),
+            tr!(parse_block_top),
+            tr!(line_comment_parser),
+        )),
+    ))
+    .parse_next(input)?;
+    Ok(result)
+}
+
+pub fn parse_use_top(input: &mut Input) -> ModalResult<Top> {
+    Ok(Top::Use(parse_use.parse_next(input)?))
+}
+
+pub fn parse_use(input: &mut Input) -> ModalResult<Use> {
+    token("use").parse_next(input)?;
+    let module = identifier_parser.parse_next(input)?;
+    token(";").parse_next(input)?;
+    Ok(Use { module })
+}
+
+pub fn parse_enum_top(input: &mut Input) -> ModalResult<Top> {
+    Ok(Top::Enum(parse_enum.parse_next(input)?))
+}
+
+pub fn parse_enum(input: &mut Input) -> ModalResult<Enum> {
+    token("enum").parse_next(input)?;
+    let width = delimited("<", number_parser, ">").parse_next(input)?;
+    let id = identifier_parser.parse_next(input)?;
+    token("{").parse_next(input)?;
+    let alternatives =
+        separated(1.., parse_enum_alt, token(",")).parse_next(input)?;
+    // allow trailing comma
+    let _ = token(",").parse_next(input);
+    token("}").parse_next(input)?;
+    Ok(Enum {
+        id,
+        width,
+        alternatives,
+    })
+}
+
+pub fn parse_enum_alt(input: &mut Input) -> ModalResult<Alternative> {
+    let id = identifier_parser.parse_next(input)?;
+    token("=").parse_next(input)?;
+    let value = number_parser.parse_next(input)?;
+    Ok(Alternative { id, value })
+}
+
+pub fn parse_reg_top(input: &mut Input) -> ModalResult<Top> {
+    Ok(Top::Register(parse_reg.parse_next(input)?))
+}
+
+pub fn parse_reg(input: &mut Input) -> ModalResult<Register> {
+    token("register").parse_next(input)?;
+    let width = delimited("<", number_parser, ">").parse_next(input)?;
+    let id = identifier_parser.parse_next(input)?;
+    token("{").parse_next(input)?;
+    let fields = separated(1.., parse_field, token(",")).parse_next(input)?;
+    // allow trailing comma
+    let _ = token(",").parse_next(input);
+    token("}").parse_next(input)?;
+    Ok(Register { id, width, fields })
+}
+
+pub fn parse_field(input: &mut Input) -> ModalResult<Field> {
+    let id = identifier_parser.parse_next(input)?;
+    token(":").parse_next(input)?;
+    let mode = parse_field_mode.parse_next(input)?;
+    let typ = parse_field_type.parse_next(input)?;
+    Ok(Field { id, mode, typ })
+}
+
+pub fn parse_field_type(input: &mut Input) -> ModalResult<Type> {
+    alt((
+        parse_elipsis_type,
+        parse_bitfield_type,
+        parse_bool_type,
+        parse_component_type,
+    ))
+    .parse_next(input)
+}
+
+pub fn parse_bool_type(input: &mut Input) -> ModalResult<Type> {
+    token(parse_bool_type_impl).parse_next(input)?;
+    Ok(Type::Bool)
+}
+
+pub fn parse_bitfield_type(input: &mut Input) -> ModalResult<Type> {
+    Ok(Type::Bitfield {
+        width: token(parse_bitfield_type_impl).parse_next(input)?,
+    })
+}
+
+pub fn parse_component_type(input: &mut Input) -> ModalResult<Type> {
+    Ok(Type::Component {
+        id: token(parse_qualified_type).parse_next(input)?,
+    })
+}
+
+pub fn parse_elipsis_type(input: &mut Input) -> ModalResult<Type> {
+    token("...").parse_next(input)?;
+    Ok(Type::Ellipsis)
+}
+
+pub fn parse_bool_type_impl(input: &mut Input) -> ModalResult<()> {
+    "bool".parse_next(input)?;
+    Ok(())
+}
+
+pub fn parse_bitfield_type_impl(input: &mut Input) -> ModalResult<Number> {
+    "b".parse_next(input)?;
+    number_parser.parse_next(input)
+}
+
+pub fn parse_qualified_type(input: &mut Input) -> ModalResult<QualifiedType> {
+    let (path, span) = parse_module_path.with_span().parse_next(input)?;
+    Ok(QualifiedType {
+        path,
+        span: span.into(),
+    })
+}
+
+pub fn parse_module_path(input: &mut Input) -> ModalResult<ModulePath> {
+    let (path, span) = separated(0.., identifier_parser, token("::"))
+        .with_span()
+        .parse_next(input)?;
+    Ok(ModulePath {
+        path,
+        span: span.into(),
+    })
+}
+
+pub fn parse_field_mode(input: &mut Input) -> ModalResult<FieldMode> {
+    alt((
+        parse_field_mode_ro,
+        parse_field_mode_wo,
+        parse_field_mode_rw,
+        parse_field_mode_reserved,
+    ))
+    .parse_next(input)
+}
+
+pub fn parse_field_mode_ro(input: &mut Input) -> ModalResult<FieldMode> {
+    token("ro").parse_next(input)?;
+    Ok(FieldMode::ReadOnly)
+}
+
+pub fn parse_field_mode_wo(input: &mut Input) -> ModalResult<FieldMode> {
+    token("wo").parse_next(input)?;
+    Ok(FieldMode::WriteOnly)
+}
+
+pub fn parse_field_mode_rw(input: &mut Input) -> ModalResult<FieldMode> {
+    token("rw").parse_next(input)?;
+    Ok(FieldMode::ReadWrite)
+}
+
+pub fn parse_field_mode_reserved(input: &mut Input) -> ModalResult<FieldMode> {
+    token("reserved").parse_next(input)?;
+    Ok(FieldMode::Reserved)
+}
+
+pub fn parse_block_top(input: &mut Input) -> ModalResult<Top> {
+    Ok(Top::Block(parse_block.parse_next(input)?))
+}
+
+pub fn parse_block(input: &mut Input) -> ModalResult<Block> {
+    token("block").parse_next(input)?;
+    let id = identifier_parser.parse_next(input)?;
+    token("{").parse_next(input)?;
+    let elements =
+        separated(0.., block_element_parser, token(",")).parse_next(input)?;
+    // allow trailing comma
+    let _ = token(",").parse_next(input);
+    token("}").parse_next(input)?;
+    Ok(Block { id, elements })
+}
+
+pub fn block_element_parser(input: &mut Input) -> ModalResult<BlockElement> {
+    let component = component_parser.parse_next(input)?;
+    let offset = component_offset_parser.parse_next(input).ok();
+    Ok(BlockElement { component, offset })
+}
+
+pub fn component_parser(input: &mut Input) -> ModalResult<Component> {
+    let id = identifier_parser.parse_next(input)?;
+    token(":").parse_next(input)?;
+    let typ = parse_qualified_type.parse_next(input)?;
+    Ok(match component_array_parser.parse_next(input) {
+        Ok((length, spacing)) => Component::Array {
+            id,
+            typ,
+            length,
+            spacing,
+        },
+        Err(_) => Component::Single { id, typ },
+    })
+}
+
+pub fn component_array_parser(
+    input: &mut Input,
+) -> ModalResult<(Number, Option<Number>)> {
+    token("[").parse_next(input)?;
+    let length = number_parser.parse_next(input)?;
+    let spacing = if token(";").parse_next(input).is_ok() {
+        Some(number_parser.parse_next(input)?)
+    } else {
+        None
+    };
+    token("]").parse_next(input)?;
+    Ok((length, spacing))
+}
+
+pub fn component_offset_parser(input: &mut Input) -> ModalResult<Number> {
+    token("@").parse_next(input)?;
+    number_parser.parse_next(input)
+}
+
+/// Tokens have arbitrary amounts of space on either side.
+pub fn token<'s, Output, ParseNext>(
+    mut parser: ParseNext,
+) -> impl Parser<Input<'s>, Output, ErrMode<ContextError>>
+where
+    ParseNext: Parser<Input<'s>, Output, ErrMode<ContextError>>,
+{
+    move |input: &mut Input<'s>| {
+        multi_disc_parser.parse_next(input)?;
+        let result = parser.parse_next(input)?;
+        multi_disc_parser.parse_next(input)?;
+        Ok(result)
+    }
+}
+pub fn multi_disc_parser(input: &mut Input) -> ModalResult<()> {
+    repeat(0.., disc_parser).parse_next(input)
+}
+
+pub fn disc_parser(input: &mut Input) -> ModalResult<()> {
+    alt((line_comment_disc_parser, space_disc_parser)).parse_next(input)?;
+    Ok(())
+}
+
+pub fn line_comment_disc_parser(input: &mut Input) -> ModalResult<()> {
+    let _ = line_comment_parser.parse_next(input)?;
+    Ok(())
+}
+
+pub fn space_disc_parser(input: &mut Input) -> ModalResult<()> {
+    let _ = multispace1.parse_next(input)?;
+    Ok(())
+}
+
+/// Parse c-style a line comment.
+pub fn line_comment_parser(input: &mut Input) -> ModalResult<Top> {
+    let _ = multispace0.parse_next(input)?;
+    let _ = "//".parse_next(input)?;
+    let _ = till_line_ending.parse_next(input)?;
+    let _ = line_ending.parse_next(input)?;
+    Ok(Top::Comment)
+}
+
+pub fn line_comments_parser(input: &mut Input) -> ModalResult<Vec<Top>> {
+    repeat(0.., token(line_comment_parser)).parse_next(input)
+}
+
+/// Parse an identifier.
+pub fn identifier_parser<'s>(input: &mut Input<'s>) -> ModalResult<Identifier> {
+    trace("identifier_parser", move |input: &mut Input<'s>| {
+        let (ident, span) = token((alt((alpha1, "_")), alphanumunder0))
+            .with_span()
+            .parse_next(input)?;
+        Ok(Identifier {
+            name: format!("{}{}", ident.0, ident.1),
+            span: span.into(),
+        })
+    })
+    .parse_next(input)
+}
+
+/// Parse a series of alphanumeric chracters or underscore.
+pub fn alphanumunder0(input: &mut Input) -> ModalResult<String> {
+    let result = repeat(0.., alt((alphanumeric1, "_"))).parse_next(input)?;
+    Ok(result)
+}
+
+pub fn number_parser(input: &mut Input) -> ModalResult<Number> {
+    let (value, span) = number_parser_impl.with_span().parse_next(input)?;
+    Ok(Number {
+        value,
+        span: span.into(),
+    })
+}
+
+pub fn number_parser_impl(input: &mut Input) -> ModalResult<u128> {
+    if token("0x").parse_next(input).is_ok() {
+        let s = hex_digit1.parse_next(input)?;
+        let n = u128::from_str_radix(s, 16).unwrap();
+        Ok(n)
+    } else if token("0b").parse_next(input).is_ok() {
+        let s: String = repeat(1.., alt(("0", "1"))).parse_next(input)?;
+        let n = u128::from_str_radix(&s, 2).unwrap();
+        Ok(n)
+    } else {
+        let s = digit1.parse_next(input)?;
+        let n: u128 = s.parse().unwrap();
+        Ok(n)
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use crate::common::Span;
+
+    use super::*;
+
+    #[test]
+    fn nic_example_parse() {
+        let text = std::fs::read_to_string("examples/nic.rsf").unwrap();
+        let s = Input::new(text.as_str());
+        let ast = match parse.parse(s) {
+            Ok(ast) => ast,
+            Err(ref e) => {
+                panic!("parsing failed: {}", e);
+            }
+        };
+        assert_eq!(ast.use_statements.len(), 2);
+        assert_eq!(ast.use_statements[0].module.name, "ethernet");
+        assert_eq!(ast.use_statements[1].module.name, "cei");
+
+        assert_eq!(ast.enums.len(), 1);
+        assert_eq!(ast.enums[0].id.name, "Lanes");
+        assert_eq!(ast.enums[0].width.value, 2);
+        assert_eq!(ast.enums[0].alternatives.len(), 5);
+        assert_eq!(ast.enums[0].alternatives[0].id.name, "Single");
+        assert_eq!(ast.enums[0].alternatives[1].id.name, "L2");
+        assert_eq!(ast.enums[0].alternatives[2].id.name, "L4");
+        assert_eq!(ast.enums[0].alternatives[3].id.name, "F2");
+        assert_eq!(ast.enums[0].alternatives[4].id.name, "F4");
+
+        assert_eq!(ast.registers.len(), 2);
+        assert_eq!(ast.registers[0].id.name, "PhyConfig");
+        assert_eq!(ast.registers[0].width.value, 32);
+        assert_eq!(ast.registers[0].fields.len(), 6);
+        assert_eq!(ast.registers[0].fields[0].id.name, "speed");
+        assert_eq!(ast.registers[0].fields[0].mode, FieldMode::ReadWrite);
+        assert_eq!(
+            ast.registers[0].fields[0].typ,
+            Type::Component {
+                id: ModulePath::from(vec!["ethernet", "DataRate"]).into()
+            }
+        );
+        assert_eq!(ast.registers[0].fields[1].id.name, "reach");
+        assert_eq!(ast.registers[0].fields[1].mode, FieldMode::ReadWrite);
+        assert_eq!(
+            ast.registers[0].fields[1].typ,
+            Type::Component {
+                id: ModulePath::from(vec!["ethernet", "Reach"]).into()
+            }
+        );
+        assert_eq!(ast.registers[0].fields[2].id.name, "lanes");
+        assert_eq!(ast.registers[0].fields[2].mode, FieldMode::ReadWrite);
+        assert_eq!(
+            ast.registers[0].fields[2].typ,
+            Type::Component {
+                id: ModulePath::from(vec!["Lanes"]).into()
+            }
+        );
+        assert_eq!(ast.registers[0].fields[3].id.name, "fec");
+        assert_eq!(ast.registers[0].fields[3].mode, FieldMode::ReadWrite);
+        assert_eq!(
+            ast.registers[0].fields[3].typ,
+            Type::Component {
+                id: ModulePath::from(vec!["ethernet", "Fec"]).into()
+            }
+        );
+        assert_eq!(ast.registers[0].fields[4].id.name, "modulation");
+        assert_eq!(ast.registers[0].fields[4].mode, FieldMode::ReadWrite);
+        assert_eq!(
+            ast.registers[0].fields[4].typ,
+            Type::Component {
+                id: ModulePath::from(vec!["cei", "Modulation"]).into()
+            }
+        );
+        assert_eq!(ast.registers[0].fields[5].id.name, "_");
+        assert_eq!(ast.registers[0].fields[5].mode, FieldMode::Reserved);
+        assert_eq!(ast.registers[0].fields[5].typ, Type::Ellipsis,);
+
+        assert_eq!(ast.registers[1].id.name, "PhyStatus");
+        assert_eq!(ast.registers[1].width.value, 32);
+        assert_eq!(ast.registers[1].fields.len(), 4);
+        assert_eq!(ast.registers[1].fields[0].id.name, "carrier");
+        assert_eq!(ast.registers[1].fields[0].mode, FieldMode::ReadOnly);
+        assert_eq!(ast.registers[1].fields[0].typ, Type::Bool);
+        assert_eq!(ast.registers[1].fields[1].id.name, "signal_error");
+        assert_eq!(ast.registers[1].fields[1].mode, FieldMode::ReadOnly);
+        assert_eq!(ast.registers[1].fields[1].typ, Type::Bool);
+        assert_eq!(ast.registers[1].fields[2].id.name, "data_valid");
+        assert_eq!(ast.registers[1].fields[2].mode, FieldMode::ReadOnly);
+        assert_eq!(ast.registers[1].fields[2].typ, Type::Bool);
+        assert_eq!(ast.registers[1].fields[3].id.name, "_");
+        assert_eq!(ast.registers[1].fields[3].mode, FieldMode::Reserved);
+        assert_eq!(ast.registers[1].fields[3].typ, Type::Ellipsis);
+
+        assert_eq!(ast.blocks.len(), 2);
+        assert_eq!(ast.blocks[0].id.name, "Phy");
+        assert_eq!(ast.blocks[0].elements.len(), 2);
+        assert_eq!(
+            ast.blocks[0].elements[0].component,
+            Component::Single {
+                id: Identifier::new("config"),
+                typ: ModulePath::from(vec!["PhyConfig"]).into()
+            }
+        );
+        assert_eq!(
+            ast.blocks[0].elements[0].offset,
+            Some(Number {
+                value: 0x200,
+                span: Span::Any,
+            }),
+        );
+        assert_eq!(
+            ast.blocks[0].elements[1].component,
+            Component::Single {
+                id: Identifier::new("status"),
+                typ: ModulePath::from(vec!["PhyStatus"]).into()
+            }
+        );
+        assert_eq!(
+            ast.blocks[0].elements[1].offset,
+            Some(Number {
+                value: 0x400,
+                span: Span::Any,
+            }),
+        );
+
+        assert_eq!(ast.blocks[1].id.name, "Nic");
+        assert_eq!(ast.blocks[1].elements.len(), 1);
+        assert_eq!(
+            ast.blocks[1].elements[0].component,
+            Component::Array {
+                id: Identifier::new("phys"),
+                typ: ModulePath::from(vec!["Phy"]).into(),
+                length: Number {
+                    value: 4,
+                    span: Span::Any
+                },
+                spacing: Some(Number {
+                    value: 0x1000,
+                    span: Span::Any
+                }),
+            }
+        );
+        assert_eq!(
+            ast.blocks[1].elements[0].offset,
+            Some(Number {
+                value: 0x6000,
+                span: Span::Any,
+            }),
+        );
+
+        println!("{ast:#?}")
+    }
+}

@@ -1,0 +1,54 @@
+//! Definitions for IEEE 802.3 Ethernet standars elements.
+//!
+//! https://standards.ieee.org
+
+/// Reach of a signal.
+enum<3> Reach {
+	/// Backplane reach.
+	KR = 0b000,
+
+	/// Copper reach.
+	CR = 0b001,
+
+	/// Short range fiber reach.
+	SR = 0b010,
+
+	/// Datacenter fiber reach.
+	DR = 0b011,
+
+	/// Fiber reach.
+	FR = 0b100,
+
+	/// Long range fiber reach.
+	LR = 0b101,
+
+	/// Extended fiber reach.
+	ER = 0b110,
+}
+
+/// Forward error correction mode.
+enum<2> Fec {
+	/// Fec not enabled
+	None = 0b00,
+
+	/// Reed-Solomon
+	Rs = 0b01,
+
+	/// Firecode
+	Fc = 0b10,
+}
+
+/// Data rate specification.
+enum<2> DataRate {
+	/// 50 Gigabits per second.
+	G50 = 0b00,
+
+	/// 100 Gigabits per second.
+	G100 = 0b01,
+
+	/// 200 Gigabits per second.
+	G200 = 0b10,
+
+	/// 400 Gigabites per second.
+	G400 = 0b11,
+}
