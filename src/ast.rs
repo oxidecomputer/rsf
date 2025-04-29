@@ -1,7 +1,7 @@
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, fmt::Display};
 
-use crate::common::Span;
 pub use crate::common::{Enum, Identifier, Number};
+use crate::common::{Span, Typename};
 
 pub type Type = crate::common::Type<QualifiedType>;
 pub type Block = crate::common::Block<QualifiedType>;
@@ -28,6 +28,24 @@ impl From<Vec<&str>> for QualifiedType {
 pub struct QualifiedType {
     pub path: Vec<Identifier>,
     pub span: Span,
+}
+
+impl Display for QualifiedType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let path = self
+            .path
+            .iter()
+            .map(|id| id.name.as_str())
+            .collect::<Vec<_>>()
+            .join("::");
+        write!(f, "{}", path)
+    }
+}
+
+impl Typename for QualifiedType {
+    fn typename(&self) -> String {
+        self.to_string()
+    }
 }
 
 #[derive(Debug, Default, Clone)]

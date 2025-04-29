@@ -6,4 +6,5 @@ edition = "2024"
 [dependencies]
 anyhow = "1.0.98"
 camino = "1.1.9"
+colored = "3.0.0"
 winnow = "0.7.7"

@@ -1,9 +1,14 @@
 pub use crate::common::Enum;
 
-use crate::ast::{self, AstModules, Identifier};
+use crate::{
+    ast::{self, AstModules, Identifier},
+    common::Typename,
+};
 use anyhow::{Result, anyhow};
+use colored::*;
 use std::{
     collections::{BTreeMap, VecDeque},
+    fmt::Display,
     sync::Arc,
 };
 
@@ -19,11 +24,21 @@ pub enum ComponentType {
     Register(Arc<Register>),
     Enum(Arc<Enum>),
     Block(Arc<Block>),
-    Bjalbo,
+}
+
+impl Typename for ComponentType {
+    fn typename(&self) -> String {
+        match self {
+            Self::Register(x) => x.id.name.clone(),
+            Self::Enum(x) => x.id.name.clone(),
+            Self::Block(x) => x.id.name.clone(),
+        }
+    }
 }
 
 #[derive(Debug, Default, Clone)]
 pub struct Model {
+    pub id: String,
     pub enums: Vec<Arc<Enum>>,
     pub registers: Vec<Arc<Register>>,
     pub blocks: Vec<Arc<Block>>,
@@ -41,6 +56,186 @@ pub struct QualifiedType {
     pub typ: ComponentType,
 }
 
+impl Display for ModelModules {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.root)?;
+
+        for submodule in self.used.values() {
+            write!(f, "{}", submodule)?;
+        }
+
+        Ok(())
+    }
+}
+
+impl Display for Model {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let name = if self.id.is_empty() {
+            "root"
+        } else {
+            self.id.as_str()
+        };
+        writeln!(f, "{}", name.magenta())?;
+        writeln!(f, "{}", "=".repeat(name.len()).dimmed())?;
+        for x in &self.enums {
+            writeln!(f, "{}", x)?;
+        }
+        for x in &self.registers {
+            writeln!(f, "{}", x)?;
+        }
+        for x in &self.blocks {
+            writeln!(f, "{}", x)?;
+        }
+        Ok(())
+    }
+}
+
+impl Display for Register {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(
+            f,
+            "{} {}{}{}{}",
+            "register".blue(),
+            self.id.name.cyan(),
+            "<".dimmed(),
+            self.width.value.to_string().yellow(),
+            ">".dimmed(),
+        )?;
+        for x in &self.fields {
+            writeln!(f, "  {}", x)?;
+        }
+        Ok(())
+    }
+}
+
+impl Display for Field {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}{} {} {}",
+            self.id.name,
+            ":".dimmed(),
+            self.mode.to_string().blue(),
+            self.typ,
+        )
+    }
+}
+
+impl Display for Enum {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(
+            f,
+            "{} {}{}{}{}",
+            "enum".blue(),
+            self.id.name.cyan(),
+            "<".dimmed(),
+            self.width.value.to_string().yellow(),
+            ">".dimmed(),
+        )?;
+        for x in &self.alternatives {
+            writeln!(f, "  {}", x)?;
+        }
+        Ok(())
+    }
+}
+
+impl Display for Block {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "{} {}", "block".blue(), self.id.name.cyan())?;
+        for x in &self.elements {
+            writeln!(f, "  {}", x)?;
+        }
+        Ok(())
+    }
+}
+
+impl Display for BlockElement {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.component)?;
+        if let Some(offset) = &self.offset {
+            write!(
+                f,
+                " {} {}",
+                "@".dimmed(),
+                offset.value.to_string().yellow()
+            )?;
+        }
+        Ok(())
+    }
+}
+
+impl Display for Component {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Single { id, typ } => {
+                write!(f, "{}: {}", id.name, typ.typename())?;
+            }
+            Self::Array {
+                id,
+                typ,
+                length,
+                spacing,
+            } => {
+                write!(
+                    f,
+                    "{}: {}{}{}",
+                    id.name,
+                    typ.typename(),
+                    "[".dimmed(),
+                    length.value.to_string().yellow(),
+                )?;
+                if let Some(spacing) = &spacing {
+                    write!(
+                        f,
+                        "{} {}{}",
+                        ";".dimmed(),
+                        spacing.value.to_string().yellow(),
+                        "]".dimmed(),
+                    )?;
+                } else {
+                    write!(f, "]")?;
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
+impl Display for QualifiedType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let path = self
+            .module_path
+            .iter()
+            .map(|model| model.id.as_str())
+            .collect::<Vec<_>>()
+            .join("::");
+        write!(f, "{}::{}", path, self.typ)
+    }
+}
+
+impl Typename for QualifiedType {
+    fn typename(&self) -> String {
+        let sep = "::".dimmed().to_string();
+        let path = self
+            .module_path
+            .iter()
+            .map(|model| model.id.as_str().magenta().to_string())
+            .collect::<Vec<_>>()
+            .join(sep.as_str());
+        format!("{}{}{}", path, sep, self.typ.typename().cyan())
+    }
+}
+
+impl Display for ComponentType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Register(x) => write!(f, "register {}", x),
+            Self::Enum(x) => write!(f, "enum {}", x),
+            Self::Block(x) => write!(f, "block {}", x),
+        }
+    }
+}
+
 impl ModelModules {
     pub fn resolve(m: &AstModules) -> Result<Self> {
         let mut mm = Self::default();
@@ -48,8 +243,10 @@ impl ModelModules {
         // Depth-first construction to build out the leaves of the tree first
         // so references can be resolved.
         for (module_name, module_tree) in &m.used {
-            mm.used
-                .insert(module_name.clone(), Self::resolve(module_tree)?);
+            let mut next = Self::resolve(module_tree)?;
+            next.root.id = module_name.clone();
+
+            mm.used.insert(module_name.clone(), next);
         }
 
         for e in &m.root.enums {
@@ -151,7 +348,7 @@ impl ModelModules {
                     self.root.registers.iter().find(|x| x.id.name == typ.name)
                 {
                     return Ok(QualifiedType {
-                        module_path: Vec::default(),
+                        module_path: vec![self.root.clone()],
                         typ: ComponentType::Register(r.clone()),
                     });
                 }
@@ -159,7 +356,7 @@ impl ModelModules {
                     self.root.enums.iter().find(|x| x.id.name == typ.name)
                 {
                     return Ok(QualifiedType {
-                        module_path: Vec::default(),
+                        module_path: vec![self.root.clone()],
                         typ: ComponentType::Enum(e.clone()),
                     });
                 }
@@ -183,7 +380,94 @@ impl ModelModules {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::parser::parse;
+    use crate::{common::FieldMode, parser::parse};
+
+    fn check_enum_field(
+        field: &Field,
+        name: &str,
+        mode: FieldMode,
+        type_path: &[&str],
+        typename: &str,
+    ) {
+        assert_eq!(name, field.id.name);
+        let Type::Component { id } = &field.typ else {
+            panic!("expected component")
+        };
+
+        assert_eq!(mode, field.mode);
+
+        for (i, p) in type_path.iter().enumerate() {
+            assert_eq!(&id.module_path[i].id, p);
+        }
+        let ComponentType::Enum(e) = &id.typ else {
+            panic!("expected enum")
+        };
+        assert_eq!(e.id.name, typename);
+    }
+
+    fn check_ellipsis_field(field: &Field, name: &str, mode: FieldMode) {
+        assert_eq!(name, field.id.name);
+        assert_eq!(mode, field.mode);
+        assert!(matches!(field.typ, Type::Ellipsis));
+    }
+
+    fn check_bool_field(field: &Field, name: &str, mode: FieldMode) {
+        assert_eq!(name, field.id.name);
+        assert_eq!(mode, field.mode);
+        assert!(matches!(field.typ, Type::Bool));
+    }
+
+    fn check_register_block_single_component(
+        block_element: &BlockElement,
+        name: &str,
+        type_path: &[&str],
+        typename: &str,
+        offset: Option<u128>,
+    ) {
+        let Component::Single { id, typ } = &block_element.component else {
+            panic!("expected single component");
+        };
+        assert_eq!(id.name, name);
+        for (i, p) in type_path.iter().enumerate() {
+            assert_eq!(&typ.module_path[i].id, p);
+        }
+        let ComponentType::Register(r) = &typ.typ else {
+            panic!("expected register component");
+        };
+        assert_eq!(typename, r.id.name);
+        assert_eq!(offset, block_element.offset.as_ref().map(|x| x.value))
+    }
+
+    fn check_block_block_array_component(
+        block_element: &BlockElement,
+        name: &str,
+        type_path: &[&str],
+        typename: &str,
+        count: u128,
+        stride: Option<u128>,
+        offset: Option<u128>,
+    ) {
+        let Component::Array {
+            id,
+            typ,
+            length,
+            spacing,
+        } = &block_element.component
+        else {
+            panic!("expected single component");
+        };
+        assert_eq!(id.name, name);
+        for (i, p) in type_path.iter().enumerate() {
+            assert_eq!(&typ.module_path[i].id, p);
+        }
+        let ComponentType::Block(b) = &typ.typ else {
+            panic!("expected block component");
+        };
+        assert_eq!(typename, b.id.name);
+        assert_eq!(offset, block_element.offset.as_ref().map(|x| x.value));
+        assert_eq!(count, length.value);
+        assert_eq!(stride, spacing.as_ref().map(|x| x.value));
+    }
 
     #[test]
     fn nic_example_resolve() {
@@ -194,7 +478,105 @@ mod test {
             }
         };
 
-        let resolve = ModelModules::resolve(&ast).expect("resolve ast");
-        println!("{resolve:#?}");
+        let resolved = ModelModules::resolve(&ast).expect("resolve ast");
+        println!("{resolved}");
+
+        // check PhyConfig
+        assert_eq!(resolved.root.registers[0].id.name, "PhyConfig");
+        assert_eq!(resolved.root.registers[0].width.value, 32);
+        check_enum_field(
+            &resolved.root.registers[0].fields[0],
+            "speed",
+            FieldMode::ReadWrite,
+            // first path element is the "root"
+            &["", "ethernet"],
+            "DataRate",
+        );
+        check_enum_field(
+            &resolved.root.registers[0].fields[1],
+            "reach",
+            FieldMode::ReadWrite,
+            &["", "ethernet"],
+            "Reach",
+        );
+        check_enum_field(
+            &resolved.root.registers[0].fields[2],
+            "lanes",
+            FieldMode::ReadWrite,
+            &[""],
+            "Lanes",
+        );
+        check_enum_field(
+            &resolved.root.registers[0].fields[3],
+            "fec",
+            FieldMode::ReadWrite,
+            &["", "ethernet"],
+            "Fec",
+        );
+        check_enum_field(
+            &resolved.root.registers[0].fields[4],
+            "modulation",
+            FieldMode::ReadWrite,
+            &["", "cei"],
+            "Modulation",
+        );
+        check_ellipsis_field(
+            &resolved.root.registers[0].fields[5],
+            "_",
+            FieldMode::Reserved,
+        );
+
+        // check PhyStatus
+        assert_eq!(resolved.root.registers[1].id.name, "PhyStatus");
+        assert_eq!(resolved.root.registers[1].width.value, 32);
+        check_bool_field(
+            &resolved.root.registers[1].fields[0],
+            "carrier",
+            FieldMode::ReadOnly,
+        );
+        check_bool_field(
+            &resolved.root.registers[1].fields[1],
+            "signal_error",
+            FieldMode::ReadOnly,
+        );
+        check_bool_field(
+            &resolved.root.registers[1].fields[2],
+            "data_valid",
+            FieldMode::ReadOnly,
+        );
+        check_ellipsis_field(
+            &resolved.root.registers[1].fields[3],
+            "_",
+            FieldMode::Reserved,
+        );
+
+        // check Phy
+        assert_eq!(&resolved.root.blocks[0].id.name, "Phy");
+        check_register_block_single_component(
+            &resolved.root.blocks[0].elements[0],
+            "config",
+            &[],
+            "PhyConfig",
+            Some(0x200),
+        );
+        check_register_block_single_component(
+            &resolved.root.blocks[0].elements[1],
+            "status",
+            &[],
+            "PhyStatus",
+            Some(0x400),
+        );
+
+        // check Nic
+        assert_eq!(&resolved.root.blocks[1].id.name, "Nic");
+        check_block_block_array_component(
+            &resolved.root.blocks[1].elements[0],
+            "phys",
+            &[],
+            "Phy",
+            4,
+            Some(0x1000),
+            Some(0x6000),
+        );
     }
 }
