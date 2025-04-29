@@ -1,12 +1,16 @@
 //! RSF text format parser
 
+use std::collections::{BTreeMap, BTreeSet};
+
 use crate::{
     ast::{
-        Ast, Block, BlockElement, Component, Enum, Field, Identifier,
-        ModulePath, Number, QualifiedType, Register, Type, Use,
+        Ast, AstModules, Block, BlockElement, Component, Enum, Field,
+        Identifier, Number, QualifiedType, Register, Type, Use,
     },
     common::{Alternative, FieldMode},
 };
+use anyhow::{Result, anyhow};
+use camino::{Utf8Path, Utf8PathBuf};
 use winnow::{
     LocatingSlice, ModalResult, Parser,
     ascii::{
@@ -28,7 +32,50 @@ pub enum Top {
     Block(Block),
 }
 
-pub fn parse(input: &mut Input) -> ModalResult<Ast> {
+/// Parse the file at the specified path, and recursively parse any used
+/// modules.
+pub fn parse(filepath: &Utf8Path) -> Result<AstModules> {
+    parse_rec(filepath, BTreeSet::default())
+}
+
+pub fn parse_rec(
+    filepath: &Utf8Path,
+    mut seen: BTreeSet<Utf8PathBuf>,
+) -> Result<AstModules> {
+    if !seen.insert(filepath.to_owned()) {
+        let path = seen
+            .iter()
+            .map(|x| x.file_stem().unwrap_or("?"))
+            .collect::<Vec<_>>()
+            .join("->");
+        let looped = filepath.file_stem().unwrap_or("?");
+        return Err(anyhow!(
+            "use loop detected along use path {path}->{looped}",
+        ));
+    }
+    let text = std::fs::read_to_string(filepath)?;
+    let input = Input::new(text.as_str());
+    let ast = parse_ast.parse(input).map_err(|e| anyhow!("{e}"))?;
+    let modules_path = filepath.parent().ok_or_else(|| {
+        anyhow!("failed to determine modules path from {filepath}")
+    })?;
+    let mut result = AstModules {
+        root: ast.clone(),
+        used: BTreeMap::default(),
+    };
+
+    for used in &ast.use_statements {
+        let mut path = Utf8PathBuf::from(modules_path);
+        path.push(format!("{}.rsf", used.module.name));
+        result
+            .used
+            .insert(used.module.name.clone(), parse_rec(&path, seen.clone())?);
+    }
+    Ok(result)
+}
+
+/// Parse an individual module file into an AST.
+pub fn parse_ast(input: &mut Input) -> ModalResult<Ast> {
     let mut ast = Ast::default();
     let top = parse_top(input)?;
     for t in top.into_iter() {
@@ -170,18 +217,10 @@ pub fn parse_bitfield_type_impl(input: &mut Input) -> ModalResult<Number> {
 }
 
 pub fn parse_qualified_type(input: &mut Input) -> ModalResult<QualifiedType> {
-    let (path, span) = parse_module_path.with_span().parse_next(input)?;
-    Ok(QualifiedType {
-        path,
-        span: span.into(),
-    })
-}
-
-pub fn parse_module_path(input: &mut Input) -> ModalResult<ModulePath> {
     let (path, span) = separated(0.., identifier_parser, token("::"))
         .with_span()
         .parse_next(input)?;
-    Ok(ModulePath {
+    Ok(QualifiedType {
         path,
         span: span.into(),
     })
@@ -365,15 +404,14 @@ pub fn number_parser_impl(input: &mut Input) -> ModalResult<u128> {
 
 #[cfg(test)]
 mod test {
-    use crate::common::Span;
-
     use super::*;
+    use crate::common::Span;
 
     #[test]
     fn nic_example_parse() {
         let text = std::fs::read_to_string("examples/nic.rsf").unwrap();
         let s = Input::new(text.as_str());
-        let ast = match parse.parse(s) {
+        let ast = match parse_ast.parse(s) {
             Ok(ast) => ast,
             Err(ref e) => {
                 panic!("parsing failed: {}", e);
@@ -402,7 +440,7 @@ mod test {
         assert_eq!(
             ast.registers[0].fields[0].typ,
             Type::Component {
-                id: ModulePath::from(vec!["ethernet", "DataRate"]).into()
+                id: QualifiedType::from(vec!["ethernet", "DataRate"])
             }
         );
         assert_eq!(ast.registers[0].fields[1].id.name, "reach");
@@ -410,7 +448,7 @@ mod test {
         assert_eq!(
             ast.registers[0].fields[1].typ,
             Type::Component {
-                id: ModulePath::from(vec!["ethernet", "Reach"]).into()
+                id: QualifiedType::from(vec!["ethernet", "Reach"])
             }
         );
         assert_eq!(ast.registers[0].fields[2].id.name, "lanes");
@@ -418,7 +456,7 @@ mod test {
         assert_eq!(
             ast.registers[0].fields[2].typ,
             Type::Component {
-                id: ModulePath::from(vec!["Lanes"]).into()
+                id: QualifiedType::from(vec!["Lanes"])
             }
         );
         assert_eq!(ast.registers[0].fields[3].id.name, "fec");
@@ -426,7 +464,7 @@ mod test {
         assert_eq!(
             ast.registers[0].fields[3].typ,
             Type::Component {
-                id: ModulePath::from(vec!["ethernet", "Fec"]).into()
+                id: QualifiedType::from(vec!["ethernet", "Fec"])
             }
         );
         assert_eq!(ast.registers[0].fields[4].id.name, "modulation");
@@ -434,7 +472,7 @@ mod test {
         assert_eq!(
             ast.registers[0].fields[4].typ,
             Type::Component {
-                id: ModulePath::from(vec!["cei", "Modulation"]).into()
+                id: QualifiedType::from(vec!["cei", "Modulation"])
             }
         );
         assert_eq!(ast.registers[0].fields[5].id.name, "_");
@@ -464,7 +502,7 @@ mod test {
             ast.blocks[0].elements[0].component,
             Component::Single {
                 id: Identifier::new("config"),
-                typ: ModulePath::from(vec!["PhyConfig"]).into()
+                typ: QualifiedType::from(vec!["PhyConfig"])
             }
         );
         assert_eq!(
@@ -478,7 +516,7 @@ mod test {
             ast.blocks[0].elements[1].component,
             Component::Single {
                 id: Identifier::new("status"),
-                typ: ModulePath::from(vec!["PhyStatus"]).into()
+                typ: QualifiedType::from(vec!["PhyStatus"])
             }
         );
         assert_eq!(
@@ -495,7 +533,7 @@ mod test {
             ast.blocks[1].elements[0].component,
             Component::Array {
                 id: Identifier::new("phys"),
-                typ: ModulePath::from(vec!["Phy"]).into(),
+                typ: QualifiedType::from(vec!["Phy"]),
                 length: Number {
                     value: 4,
                     span: Span::Any

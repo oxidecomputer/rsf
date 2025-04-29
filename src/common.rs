@@ -1,19 +1,19 @@
 use std::ops::Range;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Enum {
     pub id: Identifier,
     pub width: Number,
     pub alternatives: Vec<Alternative>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Alternative {
     pub id: Identifier,
     pub value: Number,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum FieldMode {
     ReadOnly,
     WriteOnly,
@@ -21,33 +21,33 @@ pub enum FieldMode {
     Reserved,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Field<T> {
     pub id: Identifier,
     pub mode: FieldMode,
     pub typ: T,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Register<T> {
     pub id: Identifier,
     pub width: Number,
     pub fields: Vec<Field<T>>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Block<T> {
     pub id: Identifier,
     pub elements: Vec<BlockElement<T>>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct BlockElement<T> {
     pub component: Component<T>,
     pub offset: Option<Number>,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum Component<T> {
     Single {
         id: Identifier,
@@ -61,7 +61,7 @@ pub enum Component<T> {
     },
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum Type<T> {
     Bool,
     Bitfield { width: Number },
@@ -84,7 +84,7 @@ impl Identifier {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct Number {
     pub value: u128,
     pub span: Span,
@@ -102,7 +102,7 @@ impl PartialEq for Span {
         match (self, other) {
             (Self::Any, _) => true,
             (_, Self::Any) => true,
-            (a, b) => a == b,
+            (Self::Range(a), Self::Range(b)) => a == b,
         }
     }
 }
