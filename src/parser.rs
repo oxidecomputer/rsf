@@ -7,7 +7,7 @@ use crate::{
         Ast, AstModules, Block, BlockElement, Component, Enum, Field,
         Identifier, Number, QualifiedType, Register, Type, Use,
     },
-    common::{Alternative, FieldMode},
+    common::{Alternative, FieldMode, NumberFormat},
 };
 use anyhow::{Result, anyhow};
 use camino::{Utf8Path, Utf8PathBuf};
@@ -17,7 +17,7 @@ use winnow::{
         alpha1, alphanumeric1, digit1, hex_digit1, line_ending, multispace0,
         multispace1, till_line_ending,
     },
-    combinator::{alt, cut_err, delimited, repeat, separated, trace},
+    combinator::{alt, cut_err, delimited, not, repeat, separated, trace},
     error::{ContextError, ErrMode},
 };
 
@@ -104,7 +104,7 @@ pub fn parse_top(input: &mut Input) -> ModalResult<Vec<Top>> {
             tr!(parse_enum_top),
             tr!(parse_reg_top),
             tr!(parse_block_top),
-            tr!(line_comment_parser),
+            tr!(multi_disc_parser_top),
         )),
     ))
     .parse_next(input)?;
@@ -127,6 +127,7 @@ pub fn parse_enum_top(input: &mut Input) -> ModalResult<Top> {
 }
 
 pub fn parse_enum(input: &mut Input) -> ModalResult<Enum> {
+    let doc = doc_comment_parser.parse_next(input)?;
     token("enum").parse_next(input)?;
     let width = delimited("<", number_parser, ">").parse_next(input)?;
     let id = identifier_parser.parse_next(input)?;
@@ -137,6 +138,7 @@ pub fn parse_enum(input: &mut Input) -> ModalResult<Enum> {
     let _ = token(",").parse_next(input);
     token("}").parse_next(input)?;
     Ok(Enum {
+        doc,
         id,
         width,
         alternatives,
@@ -144,10 +146,11 @@ pub fn parse_enum(input: &mut Input) -> ModalResult<Enum> {
 }
 
 pub fn parse_enum_alt(input: &mut Input) -> ModalResult<Alternative> {
+    let doc = doc_comment_parser.parse_next(input)?;
     let id = identifier_parser.parse_next(input)?;
     token("=").parse_next(input)?;
     let value = number_parser.parse_next(input)?;
-    Ok(Alternative { id, value })
+    Ok(Alternative { doc, id, value })
 }
 
 pub fn parse_reg_top(input: &mut Input) -> ModalResult<Top> {
@@ -155,6 +158,7 @@ pub fn parse_reg_top(input: &mut Input) -> ModalResult<Top> {
 }
 
 pub fn parse_reg(input: &mut Input) -> ModalResult<Register> {
+    let doc = doc_comment_parser.parse_next(input)?;
     token("register").parse_next(input)?;
     let width = delimited("<", number_parser, ">").parse_next(input)?;
     let id = identifier_parser.parse_next(input)?;
@@ -163,15 +167,21 @@ pub fn parse_reg(input: &mut Input) -> ModalResult<Register> {
     // allow trailing comma
     let _ = token(",").parse_next(input);
     token("}").parse_next(input)?;
-    Ok(Register { id, width, fields })
+    Ok(Register {
+        doc,
+        id,
+        width,
+        fields,
+    })
 }
 
 pub fn parse_field(input: &mut Input) -> ModalResult<Field> {
+    let doc = doc_comment_parser.parse_next(input)?;
     let id = identifier_parser.parse_next(input)?;
     token(":").parse_next(input)?;
     let mode = parse_field_mode.parse_next(input)?;
     let typ = parse_field_type.parse_next(input)?;
-    Ok(Field { id, mode, typ })
+    Ok(Field { doc, id, mode, typ })
 }
 
 pub fn parse_field_type(input: &mut Input) -> ModalResult<Type> {
@@ -261,6 +271,7 @@ pub fn parse_block_top(input: &mut Input) -> ModalResult<Top> {
 }
 
 pub fn parse_block(input: &mut Input) -> ModalResult<Block> {
+    let doc = doc_comment_parser.parse_next(input)?;
     token("block").parse_next(input)?;
     let id = identifier_parser.parse_next(input)?;
     token("{").parse_next(input)?;
@@ -269,13 +280,18 @@ pub fn parse_block(input: &mut Input) -> ModalResult<Block> {
     // allow trailing comma
     let _ = token(",").parse_next(input);
     token("}").parse_next(input)?;
-    Ok(Block { id, elements })
+    Ok(Block { doc, id, elements })
 }
 
 pub fn block_element_parser(input: &mut Input) -> ModalResult<BlockElement> {
+    let doc = doc_comment_parser.parse_next(input)?;
     let component = component_parser.parse_next(input)?;
     let offset = component_offset_parser.parse_next(input).ok();
-    Ok(BlockElement { component, offset })
+    Ok(BlockElement {
+        doc,
+        component,
+        offset,
+    })
 }
 
 pub fn component_parser(input: &mut Input) -> ModalResult<Component> {
@@ -326,6 +342,16 @@ where
         Ok(result)
     }
 }
+
+pub fn multi_disc_parser_top(input: &mut Input) -> ModalResult<Top> {
+    multi_disc_parser1.parse_next(input)?;
+    Ok(Top::Comment)
+}
+
+pub fn multi_disc_parser1(input: &mut Input) -> ModalResult<()> {
+    repeat(1.., disc_parser).parse_next(input)
+}
+
 pub fn multi_disc_parser(input: &mut Input) -> ModalResult<()> {
     repeat(0.., disc_parser).parse_next(input)
 }
@@ -345,10 +371,23 @@ pub fn space_disc_parser(input: &mut Input) -> ModalResult<()> {
     Ok(())
 }
 
+pub fn doc_comment_parser(input: &mut Input) -> ModalResult<Vec<String>> {
+    let lines: Vec<String> =
+        repeat(1.., doc_comment_line_parser).parse_next(input)?;
+    Ok(lines)
+}
+
+pub fn doc_comment_line_parser(input: &mut Input) -> ModalResult<String> {
+    let _ = "///".parse_next(input)?;
+    let s = till_line_ending.parse_next(input)?;
+    Ok(s.to_owned())
+}
+
 /// Parse c-style a line comment.
 pub fn line_comment_parser(input: &mut Input) -> ModalResult<Top> {
     let _ = multispace0.parse_next(input)?;
     let _ = "//".parse_next(input)?;
+    not("/").parse_next(input)?;
     let _ = till_line_ending.parse_next(input)?;
     let _ = line_ending.parse_next(input)?;
     Ok(Top::Comment)
@@ -379,26 +418,30 @@ pub fn alphanumunder0(input: &mut Input) -> ModalResult<String> {
 }
 
 pub fn number_parser(input: &mut Input) -> ModalResult<Number> {
-    let (value, span) = number_parser_impl.with_span().parse_next(input)?;
+    let ((value, format), span) =
+        number_parser_impl.with_span().parse_next(input)?;
     Ok(Number {
         value,
+        format,
         span: span.into(),
     })
 }
 
-pub fn number_parser_impl(input: &mut Input) -> ModalResult<u128> {
+pub fn number_parser_impl(
+    input: &mut Input,
+) -> ModalResult<(u128, NumberFormat)> {
     if token("0x").parse_next(input).is_ok() {
         let s = hex_digit1.parse_next(input)?;
         let n = u128::from_str_radix(s, 16).unwrap();
-        Ok(n)
+        Ok((n, NumberFormat::Hex { digits: s.len() }))
     } else if token("0b").parse_next(input).is_ok() {
         let s: String = repeat(1.., alt(("0", "1"))).parse_next(input)?;
         let n = u128::from_str_radix(&s, 2).unwrap();
-        Ok(n)
+        Ok((n, NumberFormat::Binary { digits: s.len() }))
     } else {
         let s = digit1.parse_next(input)?;
         let n: u128 = s.parse().unwrap();
-        Ok(n)
+        Ok((n, NumberFormat::Decimal { digits: s.len() }))
     }
 }
 
@@ -509,6 +552,7 @@ mod test {
             ast.blocks[0].elements[0].offset,
             Some(Number {
                 value: 0x200,
+                format: NumberFormat::Hex { digits: 3 },
                 span: Span::Any,
             }),
         );
@@ -523,6 +567,7 @@ mod test {
             ast.blocks[0].elements[1].offset,
             Some(Number {
                 value: 0x400,
+                format: NumberFormat::Hex { digits: 3 },
                 span: Span::Any,
             }),
         );
@@ -536,10 +581,12 @@ mod test {
                 typ: QualifiedType::from(vec!["Phy"]),
                 length: Number {
                     value: 4,
+                    format: NumberFormat::Decimal { digits: 1 },
                     span: Span::Any
                 },
                 spacing: Some(Number {
                     value: 0x1000,
+                    format: NumberFormat::Hex { digits: 4 },
                     span: Span::Any
                 }),
             }
@@ -548,6 +595,7 @@ mod test {
             ast.blocks[1].elements[0].offset,
             Some(Number {
                 value: 0x6000,
+                format: NumberFormat::Hex { digits: 4 },
                 span: Span::Any,
             }),
         );

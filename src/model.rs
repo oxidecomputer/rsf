@@ -193,7 +193,7 @@ impl Display for Component {
                         "]".dimmed(),
                     )?;
                 } else {
-                    write!(f, "]")?;
+                    write!(f, "{}", "]".dimmed())?;
                 }
             }
         }
@@ -256,12 +256,14 @@ impl ModelModules {
             let mut fields = Vec::default();
             for f in &r.fields {
                 fields.push(Field {
+                    doc: f.doc.clone(),
                     id: f.id.clone(),
                     mode: f.mode.clone(),
                     typ: mm.resolve_type(&f.typ)?,
                 });
             }
             mm.root.registers.push(Arc::new(Register {
+                doc: r.doc.clone(),
                 id: r.id.clone(),
                 width: r.width.clone(),
                 fields,
@@ -271,6 +273,7 @@ impl ModelModules {
             let mut elements = Vec::default();
             for e in &b.elements {
                 elements.push(BlockElement {
+                    doc: e.doc.clone(),
                     component: match &e.component {
                         crate::ast::Component::Single { id, typ } => {
                             Component::Single {
@@ -294,6 +297,7 @@ impl ModelModules {
                 })
             }
             mm.root.blocks.push(Arc::new(Block {
+                doc: b.doc.clone(),
                 id: b.id.clone(),
                 elements,
             }));

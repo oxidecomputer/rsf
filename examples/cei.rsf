@@ -5,6 +5,8 @@
 
 /// Supported signal modulation types.
 enum<1> Modulation {
-	Nrz = 0b0,
-	Pam4 = 0b1,
+    /// Non return to zero
+    Nrz = 0b0,
+    /// Pulse amplitude modulation 4
+    Pam4 = 0b1,
 }
