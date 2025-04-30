@@ -260,6 +260,7 @@ impl ModelModules {
                     id: f.id.clone(),
                     mode: f.mode.clone(),
                     typ: mm.resolve_type(&f.typ)?,
+                    offset: f.offset.clone(),
                 });
             }
             mm.root.registers.push(Arc::new(Register {

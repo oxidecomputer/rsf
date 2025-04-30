@@ -89,6 +89,7 @@ pub struct Field<T> {
     pub id: Identifier,
     pub mode: FieldMode,
     pub typ: T,
+    pub offset: Option<Number>,
 }
 
 #[derive(Debug, Clone)]

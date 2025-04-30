@@ -181,7 +181,14 @@ pub fn parse_field(input: &mut Input) -> ModalResult<Field> {
     token(":").parse_next(input)?;
     let mode = parse_field_mode.parse_next(input)?;
     let typ = parse_field_type.parse_next(input)?;
-    Ok(Field { doc, id, mode, typ })
+    let offset = component_offset_parser.parse_next(input).ok();
+    Ok(Field {
+        doc,
+        id,
+        mode,
+        typ,
+        offset,
+    })
 }
 
 pub fn parse_field_type(input: &mut Input) -> ModalResult<Type> {

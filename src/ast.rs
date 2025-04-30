@@ -91,13 +91,18 @@ impl Emit for Field {
         for x in &self.doc {
             writeln!(f, "    ///{}", x)?;
         }
-        writeln!(
+        write!(
             f,
-            "    {}: {} {},",
+            "    {}: {} {}",
             self.id.name,
             self.mode.to_code(),
             self.typ.to_code()
-        )
+        )?;
+        if let Some(offset) = &self.offset {
+            writeln!(f, " @ {},", offset.to_code())
+        } else {
+            writeln!(f, ",")
+        }
     }
 }
 
