@@ -117,7 +117,16 @@ impl Display for Field {
             ":".dimmed(),
             self.mode.to_string().blue(),
             self.typ,
-        )
+        )?;
+        if let Some(offset) = &self.offset {
+            write!(
+                f,
+                " {} {}",
+                "@".dimmed(),
+                offset.value.to_string().yellow()
+            )?;
+        }
+        Ok(())
     }
 }
 
