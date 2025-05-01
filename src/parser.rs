@@ -15,7 +15,7 @@ use winnow::{
     LocatingSlice, ModalResult, Parser,
     ascii::{
         alpha1, alphanumeric1, digit1, hex_digit1, line_ending, multispace0,
-        multispace1, till_line_ending,
+        multispace1, newline, till_line_ending,
     },
     combinator::{alt, cut_err, delimited, not, repeat, separated, trace},
     error::{ContextError, ErrMode},
@@ -67,9 +67,10 @@ pub fn parse_rec(
     for used in &ast.use_statements {
         let mut path = Utf8PathBuf::from(modules_path);
         path.push(format!("{}.rsf", used.module.name));
-        result
-            .used
-            .insert(used.module.name.clone(), parse_rec(&path, seen.clone())?);
+        let sub = parse_rec(&path, seen.clone())
+            .map_err(|e| anyhow!("{}: {e}", used.module.name))?;
+
+        result.used.insert(used.module.name.clone(), sub);
     }
     Ok(result)
 }
@@ -129,6 +130,11 @@ pub fn parse_enum_top(input: &mut Input) -> ModalResult<Top> {
 pub fn parse_enum(input: &mut Input) -> ModalResult<Enum> {
     let doc = doc_comment_parser.parse_next(input)?;
     token("enum").parse_next(input)?;
+    let mut e = cut_err(parse_enum_cut).parse_next(input)?;
+    e.doc = doc;
+    Ok(e)
+}
+pub fn parse_enum_cut(input: &mut Input) -> ModalResult<Enum> {
     let width = delimited("<", number_parser, ">").parse_next(input)?;
     let id = identifier_parser.parse_next(input)?;
     token("{").parse_next(input)?;
@@ -138,7 +144,7 @@ pub fn parse_enum(input: &mut Input) -> ModalResult<Enum> {
     let _ = token(",").parse_next(input);
     token("}").parse_next(input)?;
     Ok(Enum {
-        doc,
+        doc: Vec::default(),
         id,
         width,
         alternatives,
@@ -160,15 +166,21 @@ pub fn parse_reg_top(input: &mut Input) -> ModalResult<Top> {
 pub fn parse_reg(input: &mut Input) -> ModalResult<Register> {
     let doc = doc_comment_parser.parse_next(input)?;
     token("register").parse_next(input)?;
+    let mut reg = cut_err(parse_reg_cut).parse_next(input)?;
+    reg.doc = doc;
+    Ok(reg)
+}
+
+pub fn parse_reg_cut(input: &mut Input) -> ModalResult<Register> {
     let width = delimited("<", number_parser, ">").parse_next(input)?;
     let id = identifier_parser.parse_next(input)?;
     token("{").parse_next(input)?;
-    let fields = separated(1.., parse_field, token(",")).parse_next(input)?;
+    let fields = separated(0.., parse_field, token(",")).parse_next(input)?;
     // allow trailing comma
     let _ = token(",").parse_next(input);
     token("}").parse_next(input)?;
     Ok(Register {
-        doc,
+        doc: Vec::default(),
         id,
         width,
         fields,
@@ -280,6 +292,12 @@ pub fn parse_block_top(input: &mut Input) -> ModalResult<Top> {
 pub fn parse_block(input: &mut Input) -> ModalResult<Block> {
     let doc = doc_comment_parser.parse_next(input)?;
     token("block").parse_next(input)?;
+    let mut blk = cut_err(parse_block_cut).parse_next(input)?;
+    blk.doc = doc;
+    Ok(blk)
+}
+
+pub fn parse_block_cut(input: &mut Input) -> ModalResult<Block> {
     let id = identifier_parser.parse_next(input)?;
     token("{").parse_next(input)?;
     let elements =
@@ -287,7 +305,11 @@ pub fn parse_block(input: &mut Input) -> ModalResult<Block> {
     // allow trailing comma
     let _ = token(",").parse_next(input);
     token("}").parse_next(input)?;
-    Ok(Block { doc, id, elements })
+    Ok(Block {
+        doc: Vec::default(),
+        id,
+        elements,
+    })
 }
 
 pub fn block_element_parser(input: &mut Input) -> ModalResult<BlockElement> {
@@ -380,11 +402,12 @@ pub fn space_disc_parser(input: &mut Input) -> ModalResult<()> {
 
 pub fn doc_comment_parser(input: &mut Input) -> ModalResult<Vec<String>> {
     let lines: Vec<String> =
-        repeat(1.., doc_comment_line_parser).parse_next(input)?;
+        separated(1.., doc_comment_line_parser, newline).parse_next(input)?;
     Ok(lines)
 }
 
 pub fn doc_comment_line_parser(input: &mut Input) -> ModalResult<String> {
+    let _ = multispace0.parse_next(input)?;
     let _ = "///".parse_next(input)?;
     let s = till_line_ending.parse_next(input)?;
     Ok(s.to_owned())
