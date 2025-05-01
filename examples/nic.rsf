@@ -52,6 +52,7 @@ block Phy {
 }
 
 /// Nic blocks.
+/// Phy registers.
 block Nic {
     /// A block for each of the four phys.
     phys: Phy[4; 0x1000] @ 0x6000,
