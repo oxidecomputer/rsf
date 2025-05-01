@@ -36,7 +36,7 @@ impl Typename for ComponentType {
     }
 }
 
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Clone)]
 pub struct Model {
     pub id: String,
     pub enums: Vec<Arc<Enum>>,
@@ -44,7 +44,7 @@ pub struct Model {
     pub blocks: Vec<Arc<Block>>,
 }
 
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Clone)]
 pub struct ModelModules {
     pub root: Model,
     pub used: BTreeMap<String, ModelModules>,
@@ -246,15 +246,21 @@ impl Display for ComponentType {
 }
 
 impl ModelModules {
-    pub fn resolve(m: &AstModules) -> Result<Self> {
-        let mut mm = Self::default();
+    pub fn resolve(m: &AstModules, id: String) -> Result<Self> {
+        let mut mm = Self {
+            used: BTreeMap::default(),
+            root: Model {
+                id,
+                enums: vec![],
+                registers: vec![],
+                blocks: vec![],
+            },
+        };
 
         // Depth-first construction to build out the leaves of the tree first
         // so references can be resolved.
         for (module_name, module_tree) in &m.used {
-            let mut next = Self::resolve(module_tree)?;
-            next.root.id = module_name.clone();
-
+            let next = Self::resolve(module_tree, module_name.clone())?;
             mm.used.insert(module_name.clone(), next);
         }
 
@@ -378,7 +384,7 @@ impl ModelModules {
                     self.root.blocks.iter().find(|x| x.id.name == typ.name)
                 {
                     return Ok(QualifiedType {
-                        module_path: Vec::default(),
+                        module_path: vec![self.root.clone()],
                         typ: ComponentType::Block(b.clone()),
                     });
                 }
@@ -492,7 +498,8 @@ mod test {
             }
         };
 
-        let resolved = ModelModules::resolve(&ast).expect("resolve ast");
+        let resolved =
+            ModelModules::resolve(&ast, String::from("")).expect("resolve ast");
         println!("{resolved}");
 
         // check PhyConfig
