@@ -133,21 +133,21 @@ pub trait Typename {
 }
 
 #[derive(Debug, PartialEq, Clone)]
-pub enum Type<T: Display + Typename> {
+pub enum FieldType<T: Display + Typename> {
     Bool,
     Bitfield { width: Number },
-    Component { id: T },
+    User { id: T },
     Ellipsis,
 }
 
-impl<T: Display + Typename> Display for Type<T> {
+impl<T: Display + Typename> Display for FieldType<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Bool => write!(f, "{}", "bool".cyan()),
             Self::Bitfield { width } => {
                 write!(f, "{}{}", "b".cyan(), width.value.to_string().cyan())
             }
-            Self::Component { id } => write!(f, "{}", id.typename()),
+            Self::User { id } => write!(f, "{}", id.typename()),
             Self::Ellipsis => write!(f, "{}", "...".cyan()),
         }
     }

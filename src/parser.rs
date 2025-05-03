@@ -5,7 +5,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use crate::{
     ast::{
         Ast, AstModules, Block, BlockElement, Component, Enum, Field,
-        Identifier, Number, QualifiedType, Register, Type, Use,
+        FieldType, Identifier, Number, QualifiedType, Register, Use,
     },
     common::{Alternative, FieldMode, NumberFormat},
 };
@@ -203,7 +203,7 @@ pub fn parse_field(input: &mut Input) -> ModalResult<Field> {
     })
 }
 
-pub fn parse_field_type(input: &mut Input) -> ModalResult<Type> {
+pub fn parse_field_type(input: &mut Input) -> ModalResult<FieldType> {
     alt((
         parse_elipsis_type,
         parse_bitfield_type,
@@ -213,26 +213,26 @@ pub fn parse_field_type(input: &mut Input) -> ModalResult<Type> {
     .parse_next(input)
 }
 
-pub fn parse_bool_type(input: &mut Input) -> ModalResult<Type> {
+pub fn parse_bool_type(input: &mut Input) -> ModalResult<FieldType> {
     token(parse_bool_type_impl).parse_next(input)?;
-    Ok(Type::Bool)
+    Ok(FieldType::Bool)
 }
 
-pub fn parse_bitfield_type(input: &mut Input) -> ModalResult<Type> {
-    Ok(Type::Bitfield {
+pub fn parse_bitfield_type(input: &mut Input) -> ModalResult<FieldType> {
+    Ok(FieldType::Bitfield {
         width: token(parse_bitfield_type_impl).parse_next(input)?,
     })
 }
 
-pub fn parse_component_type(input: &mut Input) -> ModalResult<Type> {
-    Ok(Type::Component {
+pub fn parse_component_type(input: &mut Input) -> ModalResult<FieldType> {
+    Ok(FieldType::User {
         id: token(parse_qualified_type).parse_next(input)?,
     })
 }
 
-pub fn parse_elipsis_type(input: &mut Input) -> ModalResult<Type> {
+pub fn parse_elipsis_type(input: &mut Input) -> ModalResult<FieldType> {
     token("...").parse_next(input)?;
-    Ok(Type::Ellipsis)
+    Ok(FieldType::Ellipsis)
 }
 
 pub fn parse_bool_type_impl(input: &mut Input) -> ModalResult<()> {
@@ -512,7 +512,7 @@ mod test {
         assert_eq!(ast.registers[0].fields[0].mode, FieldMode::ReadWrite);
         assert_eq!(
             ast.registers[0].fields[0].typ,
-            Type::Component {
+            FieldType::User {
                 id: QualifiedType::from(vec!["ethernet", "DataRate"])
             }
         );
@@ -520,7 +520,7 @@ mod test {
         assert_eq!(ast.registers[0].fields[1].mode, FieldMode::ReadWrite);
         assert_eq!(
             ast.registers[0].fields[1].typ,
-            Type::Component {
+            FieldType::User {
                 id: QualifiedType::from(vec!["ethernet", "Reach"])
             }
         );
@@ -528,7 +528,7 @@ mod test {
         assert_eq!(ast.registers[0].fields[2].mode, FieldMode::ReadWrite);
         assert_eq!(
             ast.registers[0].fields[2].typ,
-            Type::Component {
+            FieldType::User {
                 id: QualifiedType::from(vec!["Lanes"])
             }
         );
@@ -536,7 +536,7 @@ mod test {
         assert_eq!(ast.registers[0].fields[3].mode, FieldMode::ReadWrite);
         assert_eq!(
             ast.registers[0].fields[3].typ,
-            Type::Component {
+            FieldType::User {
                 id: QualifiedType::from(vec!["ethernet", "Fec"])
             }
         );
@@ -544,29 +544,29 @@ mod test {
         assert_eq!(ast.registers[0].fields[4].mode, FieldMode::ReadWrite);
         assert_eq!(
             ast.registers[0].fields[4].typ,
-            Type::Component {
+            FieldType::User {
                 id: QualifiedType::from(vec!["cei", "Modulation"])
             }
         );
         assert_eq!(ast.registers[0].fields[5].id.name, "_");
         assert_eq!(ast.registers[0].fields[5].mode, FieldMode::Reserved);
-        assert_eq!(ast.registers[0].fields[5].typ, Type::Ellipsis,);
+        assert_eq!(ast.registers[0].fields[5].typ, FieldType::Ellipsis,);
 
         assert_eq!(ast.registers[1].id.name, "PhyStatus");
         assert_eq!(ast.registers[1].width.value, 32);
         assert_eq!(ast.registers[1].fields.len(), 4);
         assert_eq!(ast.registers[1].fields[0].id.name, "carrier");
         assert_eq!(ast.registers[1].fields[0].mode, FieldMode::ReadOnly);
-        assert_eq!(ast.registers[1].fields[0].typ, Type::Bool);
+        assert_eq!(ast.registers[1].fields[0].typ, FieldType::Bool);
         assert_eq!(ast.registers[1].fields[1].id.name, "signal_error");
         assert_eq!(ast.registers[1].fields[1].mode, FieldMode::ReadOnly);
-        assert_eq!(ast.registers[1].fields[1].typ, Type::Bool);
+        assert_eq!(ast.registers[1].fields[1].typ, FieldType::Bool);
         assert_eq!(ast.registers[1].fields[2].id.name, "data_valid");
         assert_eq!(ast.registers[1].fields[2].mode, FieldMode::ReadOnly);
-        assert_eq!(ast.registers[1].fields[2].typ, Type::Bool);
+        assert_eq!(ast.registers[1].fields[2].typ, FieldType::Bool);
         assert_eq!(ast.registers[1].fields[3].id.name, "_");
         assert_eq!(ast.registers[1].fields[3].mode, FieldMode::Reserved);
-        assert_eq!(ast.registers[1].fields[3].typ, Type::Ellipsis);
+        assert_eq!(ast.registers[1].fields[3].typ, FieldType::Ellipsis);
 
         assert_eq!(ast.blocks.len(), 2);
         assert_eq!(ast.blocks[0].id.name, "Phy");

@@ -12,25 +12,45 @@ use std::{
     sync::Arc,
 };
 
-pub type Type = crate::common::Type<QualifiedType>;
-pub type Block = crate::common::Block<QualifiedType>;
-pub type BlockElement = crate::common::BlockElement<QualifiedType>;
-pub type Component = crate::common::Component<QualifiedType>;
-pub type Register = crate::common::Register<Type>;
-pub type Field = crate::common::Field<Type>;
+//pub type Type = crate::common::Type<QualifiedType>;
+pub type Block = crate::common::Block<QualifiedComponentType>;
+pub type BlockElement = crate::common::BlockElement<QualifiedComponentType>;
+pub type Component = crate::common::Component<QualifiedComponentType>;
+pub type FieldType = crate::common::FieldType<QualifiedFieldType>;
+pub type Register = crate::common::Register<FieldType>;
+pub type Field = crate::common::Field<FieldType>;
 
 #[derive(Debug, Clone)]
-pub enum ComponentType {
+pub enum ComponentUserType {
     Register(Arc<Register>),
-    Enum(Arc<Enum>),
     Block(Arc<Block>),
 }
 
-impl Typename for ComponentType {
+#[derive(Debug, Clone)]
+pub enum FieldUserType {
+    Enum(Arc<Enum>),
+}
+
+impl Display for FieldUserType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Enum(e) => write!(f, "Enum({e})"),
+        }
+    }
+}
+
+impl Typename for FieldUserType {
+    fn typename(&self) -> String {
+        match self {
+            Self::Enum(e) => e.id.name.clone(),
+        }
+    }
+}
+
+impl Typename for ComponentUserType {
     fn typename(&self) -> String {
         match self {
             Self::Register(x) => x.id.name.clone(),
-            Self::Enum(x) => x.id.name.clone(),
             Self::Block(x) => x.id.name.clone(),
         }
     }
@@ -51,9 +71,15 @@ pub struct ModelModules {
 }
 
 #[derive(Debug, Clone)]
-pub struct QualifiedType {
+pub struct QualifiedComponentType {
     pub module_path: Vec<Model>,
-    pub typ: ComponentType,
+    pub typ: ComponentUserType,
+}
+
+#[derive(Debug, Clone)]
+pub struct QualifiedFieldType {
+    pub module_path: Vec<Model>,
+    pub typ: FieldUserType,
 }
 
 impl Display for ModelModules {
@@ -210,7 +236,7 @@ impl Display for Component {
     }
 }
 
-impl Display for QualifiedType {
+impl Display for QualifiedComponentType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let path = self
             .module_path
@@ -222,7 +248,7 @@ impl Display for QualifiedType {
     }
 }
 
-impl Typename for QualifiedType {
+impl Typename for QualifiedComponentType {
     fn typename(&self) -> String {
         let sep = "::".dimmed().to_string();
         let path = self
@@ -235,11 +261,37 @@ impl Typename for QualifiedType {
     }
 }
 
-impl Display for ComponentType {
+// TODO exact same as QualifiedComponentType
+impl Display for QualifiedFieldType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let path = self
+            .module_path
+            .iter()
+            .map(|model| model.id.as_str())
+            .collect::<Vec<_>>()
+            .join("::");
+        write!(f, "{}::{}", path, self.typ)
+    }
+}
+
+// TODO exact same as QualifiedComponentType
+impl Typename for QualifiedFieldType {
+    fn typename(&self) -> String {
+        let sep = "::".dimmed().to_string();
+        let path = self
+            .module_path
+            .iter()
+            .map(|model| model.id.as_str().magenta().to_string())
+            .collect::<Vec<_>>()
+            .join(sep.as_str());
+        format!("{}{}{}", path, sep, self.typ.typename().cyan())
+    }
+}
+
+impl Display for ComponentUserType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Register(x) => write!(f, "register {}", x),
-            Self::Enum(x) => write!(f, "enum {}", x),
             Self::Block(x) => write!(f, "block {}", x),
         }
     }
@@ -274,7 +326,7 @@ impl ModelModules {
                     doc: f.doc.clone(),
                     id: f.id.clone(),
                     mode: f.mode.clone(),
-                    typ: mm.resolve_type(&f.typ)?,
+                    typ: mm.resolve_field_type(&f.typ)?,
                     offset: f.offset.clone(),
                 });
             }
@@ -294,7 +346,7 @@ impl ModelModules {
                         crate::ast::Component::Single { id, typ } => {
                             Component::Single {
                                 id: id.clone(),
-                                typ: mm.resolve_path(&typ.path)?,
+                                typ: mm.resolve_component_type(&typ.path)?,
                             }
                         }
                         crate::ast::Component::Array {
@@ -304,7 +356,7 @@ impl ModelModules {
                             spacing,
                         } => Component::Array {
                             id: id.clone(),
-                            typ: mm.resolve_path(&typ.path)?,
+                            typ: mm.resolve_component_type(&typ.path)?,
                             length: length.clone(),
                             spacing: spacing.clone(),
                         },
@@ -322,32 +374,48 @@ impl ModelModules {
         Ok(mm)
     }
 
-    pub fn resolve_type(&self, typ: &ast::Type) -> Result<Type> {
+    pub fn resolve_field_type(
+        &self,
+        typ: &ast::FieldType,
+    ) -> Result<FieldType> {
         let result = match typ {
-            ast::Type::Bool => Type::Bool,
-            ast::Type::Bitfield { width } => Type::Bitfield {
+            ast::FieldType::Bool => FieldType::Bool,
+            ast::FieldType::Bitfield { width } => FieldType::Bitfield {
                 width: width.clone(),
             },
-            ast::Type::Ellipsis => Type::Ellipsis,
-            ast::Type::Component { id } => Type::Component {
-                id: self.resolve_path(&id.path)?,
+            ast::FieldType::Ellipsis => FieldType::Ellipsis,
+            ast::FieldType::User { id } => FieldType::User {
+                id: self.resolve_field_path(&id.path)?,
             },
         };
         Ok(result)
     }
 
-    pub fn resolve_path(&self, path: &[Identifier]) -> Result<QualifiedType> {
+    pub fn resolve_field_path(
+        &self,
+        path: &[Identifier],
+    ) -> Result<QualifiedFieldType> {
         let Some((typ, path)) = path.split_last() else {
             return Err(anyhow!("could not resolve empty path"));
         };
-        self.resolve_path_rec(typ, path.iter().collect())
+        self.resolve_field_path_rec(typ, path.iter().collect())
     }
 
-    pub fn resolve_path_rec(
+    pub fn resolve_component_type(
+        &self,
+        path: &[Identifier],
+    ) -> Result<QualifiedComponentType> {
+        let Some((typ, path)) = path.split_last() else {
+            return Err(anyhow!("could not resolve empty path"));
+        };
+        self.resolve_component_path_rec(typ, path.iter().collect())
+    }
+
+    pub fn resolve_field_path_rec(
         &self,
         typ: &Identifier,
         mut path: VecDeque<&Identifier>,
-    ) -> Result<QualifiedType> {
+    ) -> Result<QualifiedFieldType> {
         match path.pop_front() {
             Some(module) => {
                 let next = self.used.get(&module.name).ok_or_else(|| {
@@ -355,10 +423,47 @@ impl ModelModules {
                     // in the error.
                     anyhow!("module {} not found", module.name)
                 })?;
-                let tp = next.resolve_path_rec(typ, path)?;
+                let tp = next.resolve_field_path_rec(typ, path)?;
                 let mut module_path = vec![self.root.clone()];
                 module_path.extend_from_slice(&tp.module_path);
-                Ok(QualifiedType {
+                Ok(QualifiedFieldType {
+                    module_path,
+                    typ: tp.typ,
+                })
+            }
+            None => {
+                if let Some(e) =
+                    self.root.enums.iter().find(|x| x.id.name == typ.name)
+                {
+                    return Ok(QualifiedFieldType {
+                        module_path: vec![self.root.clone()],
+                        typ: FieldUserType::Enum(e.clone()),
+                    });
+                }
+
+                // TODO make sure we show the whole path that is not found
+                // in the error.
+                Err(anyhow!("type {} not found {:#?}", typ.name, self.root))
+            }
+        }
+    }
+
+    pub fn resolve_component_path_rec(
+        &self,
+        typ: &Identifier,
+        mut path: VecDeque<&Identifier>,
+    ) -> Result<QualifiedComponentType> {
+        match path.pop_front() {
+            Some(module) => {
+                let next = self.used.get(&module.name).ok_or_else(|| {
+                    // TODO make sure we show the whole path that is not found
+                    // in the error.
+                    anyhow!("module {} not found", module.name)
+                })?;
+                let tp = next.resolve_component_path_rec(typ, path)?;
+                let mut module_path = vec![self.root.clone()];
+                module_path.extend_from_slice(&tp.module_path);
+                Ok(QualifiedComponentType {
                     module_path,
                     typ: tp.typ,
                 })
@@ -367,25 +472,17 @@ impl ModelModules {
                 if let Some(r) =
                     self.root.registers.iter().find(|x| x.id.name == typ.name)
                 {
-                    return Ok(QualifiedType {
+                    return Ok(QualifiedComponentType {
                         module_path: vec![self.root.clone()],
-                        typ: ComponentType::Register(r.clone()),
-                    });
-                }
-                if let Some(e) =
-                    self.root.enums.iter().find(|x| x.id.name == typ.name)
-                {
-                    return Ok(QualifiedType {
-                        module_path: vec![self.root.clone()],
-                        typ: ComponentType::Enum(e.clone()),
+                        typ: ComponentUserType::Register(r.clone()),
                     });
                 }
                 if let Some(b) =
                     self.root.blocks.iter().find(|x| x.id.name == typ.name)
                 {
-                    return Ok(QualifiedType {
+                    return Ok(QualifiedComponentType {
                         module_path: vec![self.root.clone()],
-                        typ: ComponentType::Block(b.clone()),
+                        typ: ComponentUserType::Block(b.clone()),
                     });
                 }
 
@@ -410,7 +507,7 @@ mod test {
         typename: &str,
     ) {
         assert_eq!(name, field.id.name);
-        let Type::Component { id } = &field.typ else {
+        let FieldType::User { id } = &field.typ else {
             panic!("expected component")
         };
 
@@ -419,22 +516,21 @@ mod test {
         for (i, p) in type_path.iter().enumerate() {
             assert_eq!(&id.module_path[i].id, p);
         }
-        let ComponentType::Enum(e) = &id.typ else {
-            panic!("expected enum")
-        };
+
+        let FieldUserType::Enum(e) = &id.typ;
         assert_eq!(e.id.name, typename);
     }
 
     fn check_ellipsis_field(field: &Field, name: &str, mode: FieldMode) {
         assert_eq!(name, field.id.name);
         assert_eq!(mode, field.mode);
-        assert!(matches!(field.typ, Type::Ellipsis));
+        assert!(matches!(field.typ, FieldType::Ellipsis));
     }
 
     fn check_bool_field(field: &Field, name: &str, mode: FieldMode) {
         assert_eq!(name, field.id.name);
         assert_eq!(mode, field.mode);
-        assert!(matches!(field.typ, Type::Bool));
+        assert!(matches!(field.typ, FieldType::Bool));
     }
 
     fn check_register_block_single_component(
@@ -451,7 +547,7 @@ mod test {
         for (i, p) in type_path.iter().enumerate() {
             assert_eq!(&typ.module_path[i].id, p);
         }
-        let ComponentType::Register(r) = &typ.typ else {
+        let ComponentUserType::Register(r) = &typ.typ else {
             panic!("expected register component");
         };
         assert_eq!(typename, r.id.name);
@@ -480,7 +576,7 @@ mod test {
         for (i, p) in type_path.iter().enumerate() {
             assert_eq!(&typ.module_path[i].id, p);
         }
-        let ComponentType::Block(b) = &typ.typ else {
+        let ComponentUserType::Block(b) = &typ.typ else {
             panic!("expected block component");
         };
         assert_eq!(typename, b.id.name);

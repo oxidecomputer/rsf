@@ -4,12 +4,12 @@ pub use crate::common::{Enum, Identifier, Number};
 use crate::common::{Span, Typename};
 use std::fmt::Write;
 
-pub type Type = crate::common::Type<QualifiedType>;
+pub type FieldType = crate::common::FieldType<QualifiedType>;
 pub type Block = crate::common::Block<QualifiedType>;
 pub type BlockElement = crate::common::BlockElement<QualifiedType>;
 pub type Component = crate::common::Component<QualifiedType>;
-pub type Register = crate::common::Register<Type>;
-pub type Field = crate::common::Field<Type>;
+pub type Register = crate::common::Register<FieldType>;
+pub type Field = crate::common::Field<FieldType>;
 
 #[derive(Debug, Clone)]
 pub struct Use {
@@ -106,12 +106,12 @@ impl Emit for Field {
     }
 }
 
-impl Emit for Type {
+impl Emit for FieldType {
     fn emit(&self, f: &mut impl Write) -> std::fmt::Result {
         match self {
             Self::Bool => write!(f, "bool"),
             Self::Bitfield { width } => write!(f, "b{}", width.value),
-            Self::Component { id } => id.emit(f),
+            Self::User { id } => id.emit(f),
             Self::Ellipsis => write!(f, "..."),
         }
     }
