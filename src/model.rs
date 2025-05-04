@@ -1,7 +1,7 @@
 pub use crate::common::Enum;
 
 use crate::{
-    ast::{self, AstModules, Identifier},
+    ast::{self, AstModules, Identifier, Number},
     common::Typename,
 };
 use anyhow::{Result, anyhow};
@@ -94,6 +94,24 @@ impl Display for ModelModules {
     }
 }
 
+struct RegisterLookup {
+    path: String,
+}
+
+impl Visitor for RegisterLookup {
+    //
+}
+
+impl Model {
+    /// Fetch the register at the provided path. The path is expected to
+    /// be in the form block_1/block_2/register for an arbitrary number
+    /// of blocks. Array type block components are indexed with square
+    /// brackets, e.g. block_1[5]/block_2/register.
+    pub fn get_register(&self, _path: &str) -> Result<Option<Arc<Register>>> {
+        todo!()
+    }
+}
+
 impl Display for Model {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let name = if self.id.is_empty() {
@@ -144,14 +162,12 @@ impl Display for Field {
             self.mode.to_string().blue(),
             self.typ,
         )?;
-        if let Some(offset) = &self.offset {
-            write!(
-                f,
-                " {} {}",
-                "@".dimmed(),
-                offset.value.to_string().yellow()
-            )?;
-        }
+        write!(
+            f,
+            " {} {}",
+            "@".dimmed(),
+            self.offset.value.to_string().yellow()
+        )?;
         Ok(())
     }
 }
@@ -187,15 +203,12 @@ impl Display for Block {
 impl Display for BlockElement {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.component)?;
-        if let Some(offset) = &self.offset {
-            write!(
-                f,
-                " {} {}",
-                "@".dimmed(),
-                offset.value.to_string().yellow()
-            )?;
-        }
-        Ok(())
+        write!(
+            f,
+            " {} {}",
+            "@".dimmed(),
+            self.offset.value.to_string().yellow()
+        )
     }
 }
 
@@ -219,17 +232,13 @@ impl Display for Component {
                     "[".dimmed(),
                     length.value.to_string().yellow(),
                 )?;
-                if let Some(spacing) = &spacing {
-                    write!(
-                        f,
-                        "{} {}{}",
-                        ";".dimmed(),
-                        spacing.value.to_string().yellow(),
-                        "]".dimmed(),
-                    )?;
-                } else {
-                    write!(f, "{}", "]".dimmed())?;
-                }
+                write!(
+                    f,
+                    "{} {}{}",
+                    ";".dimmed(),
+                    spacing.value.to_string().yellow(),
+                    "]".dimmed(),
+                )?;
             }
         }
         Ok(())
@@ -494,6 +503,113 @@ impl ModelModules {
     }
 }
 
+impl Model {
+    pub fn accept<V: Visitor>(&self, v: &V) {
+        for e in &self.enums {
+            v.enumeration(e.clone());
+        }
+        for r in &self.registers {
+            v.register(r.clone());
+        }
+        for b in &self.blocks {
+            v.block(b.clone(), 0);
+            b.accept(v, 0);
+        }
+    }
+}
+
+impl Block {
+    pub fn accept<V: Visitor>(&self, v: &V, addr: u128) {
+        for e in &self.elements {
+            let addr = addr + e.offset.value;
+            v.block_element(e, addr);
+            v.component(&e.component, addr);
+        }
+    }
+}
+
+impl Component {
+    pub fn accept<V: Visitor>(&self, v: &V, addr: u128) {
+        match self {
+            Self::Single { id, typ } => {
+                v.single_component(id, typ, addr);
+                match &typ.typ {
+                    ComponentUserType::Register(r) => {
+                        v.register_component(&typ.module_path, r.clone(), addr);
+                    }
+                    ComponentUserType::Block(b) => {
+                        if v.block_component(&typ.module_path, b.clone(), addr)
+                        {
+                            b.accept(v, addr);
+                        }
+                    }
+                }
+            }
+            Self::Array {
+                id,
+                typ,
+                length,
+                spacing,
+            } => {
+                for i in 0..length.value {
+                    let addr = addr + i * spacing.value;
+                    v.array_component(id, typ, length, spacing, addr)
+                }
+            }
+        }
+    }
+}
+
+impl Register {
+    pub fn accept<V: Visitor>(&self, v: &V) {
+        for f in &self.fields {
+            v.field(f);
+        }
+    }
+}
+
+pub trait Visitor {
+    fn register(&self, _reg: Arc<Register>) {}
+    fn field(&self, _field: &Field) {}
+    fn block(&self, _block: Arc<Block>, _addr: u128) {}
+    fn enumeration(&self, _enum: Arc<Enum>) {}
+    fn block_element(&self, _element: &BlockElement, _addr: u128) {}
+    fn component(&self, _component: &Component, _addr: u128) {}
+    fn single_component(
+        &self,
+        _id: &Identifier,
+        _typ: &QualifiedComponentType,
+        _addr: u128,
+    ) {
+    }
+    fn array_component(
+        &self,
+        _id: &Identifier,
+        _typ: &QualifiedComponentType,
+        _length: &Number,
+        _spacing: &Number,
+        _addr: u128,
+    ) {
+    }
+    fn register_component(
+        &self,
+        _path: &[Model],
+        _reg: Arc<Register>,
+        _addr: u128,
+    ) {
+    }
+    /// Visit a block component. Return value indicates whether to recurse
+    /// into the block.
+    fn block_component(
+        &self,
+        _path: &[Model],
+        _block: Arc<Block>,
+        _addr: u128,
+    ) -> bool {
+        true
+    }
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
@@ -521,12 +637,6 @@ mod test {
         assert_eq!(e.id.name, typename);
     }
 
-    fn check_ellipsis_field(field: &Field, name: &str, mode: FieldMode) {
-        assert_eq!(name, field.id.name);
-        assert_eq!(mode, field.mode);
-        assert!(matches!(field.typ, FieldType::Ellipsis));
-    }
-
     fn check_bool_field(field: &Field, name: &str, mode: FieldMode) {
         assert_eq!(name, field.id.name);
         assert_eq!(mode, field.mode);
@@ -538,7 +648,7 @@ mod test {
         name: &str,
         type_path: &[&str],
         typename: &str,
-        offset: Option<u128>,
+        offset: u128,
     ) {
         let Component::Single { id, typ } = &block_element.component else {
             panic!("expected single component");
@@ -551,7 +661,7 @@ mod test {
             panic!("expected register component");
         };
         assert_eq!(typename, r.id.name);
-        assert_eq!(offset, block_element.offset.as_ref().map(|x| x.value))
+        assert_eq!(offset, block_element.offset.value)
     }
 
     fn check_block_block_array_component(
@@ -560,8 +670,8 @@ mod test {
         type_path: &[&str],
         typename: &str,
         count: u128,
-        stride: Option<u128>,
-        offset: Option<u128>,
+        stride: u128,
+        offset: u128,
     ) {
         let Component::Array {
             id,
@@ -580,9 +690,9 @@ mod test {
             panic!("expected block component");
         };
         assert_eq!(typename, b.id.name);
-        assert_eq!(offset, block_element.offset.as_ref().map(|x| x.value));
+        assert_eq!(offset, block_element.offset.value);
         assert_eq!(count, length.value);
-        assert_eq!(stride, spacing.as_ref().map(|x| x.value));
+        assert_eq!(stride, spacing.value);
     }
 
     #[test]
@@ -637,11 +747,6 @@ mod test {
             &["", "cei"],
             "Modulation",
         );
-        check_ellipsis_field(
-            &resolved.root.registers[0].fields[5],
-            "_",
-            FieldMode::Reserved,
-        );
 
         // check PhyStatus
         assert_eq!(resolved.root.registers[1].id.name, "PhyStatus");
@@ -661,11 +766,6 @@ mod test {
             "data_valid",
             FieldMode::ReadOnly,
         );
-        check_ellipsis_field(
-            &resolved.root.registers[1].fields[3],
-            "_",
-            FieldMode::Reserved,
-        );
 
         // check Phy
         assert_eq!(&resolved.root.blocks[0].id.name, "Phy");
@@ -674,14 +774,14 @@ mod test {
             "config",
             &[],
             "PhyConfig",
-            Some(0x200),
+            0x200,
         );
         check_register_block_single_component(
             &resolved.root.blocks[0].elements[1],
             "status",
             &[],
             "PhyStatus",
-            Some(0x400),
+            0x400,
         );
 
         // check Nic
@@ -692,8 +792,8 @@ mod test {
             &[],
             "Phy",
             4,
-            Some(0x1000),
-            Some(0x6000),
+            0x1000,
+            0x6000,
         );
     }
 }

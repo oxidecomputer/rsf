@@ -98,11 +98,7 @@ impl Emit for Field {
             self.mode.to_code(),
             self.typ.to_code()
         )?;
-        if let Some(offset) = &self.offset {
-            writeln!(f, " @ {},", offset.to_code())
-        } else {
-            writeln!(f, ",")
-        }
+        writeln!(f, " @ {},", self.offset.to_code())
     }
 }
 
@@ -149,9 +145,7 @@ impl Emit for BlockElement {
             writeln!(f, "    ///{}", x)?;
         }
         self.component.emit(f)?;
-        if let Some(offset) = &self.offset {
-            write!(f, " @ {},", offset.to_code())?;
-        }
+        write!(f, " @ {},", self.offset.to_code())?;
         writeln!(f)
     }
 }
@@ -175,11 +169,7 @@ impl Emit for Component {
                     typ.to_code(),
                     length.to_code(),
                 )?;
-                if let Some(spacing) = &spacing {
-                    write!(f, "; {}]", spacing.to_code())?;
-                } else {
-                    write!(f, "]")?;
-                }
+                write!(f, "; {}]", spacing.to_code())?;
             }
         }
         Ok(())

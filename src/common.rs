@@ -89,7 +89,7 @@ pub struct Field<T> {
     pub id: Identifier,
     pub mode: FieldMode,
     pub typ: T,
-    pub offset: Option<Number>,
+    pub offset: Number,
 }
 
 #[derive(Debug, Clone)]
@@ -111,7 +111,7 @@ pub struct Block<T> {
 pub struct BlockElement<T> {
     pub doc: Vec<String>,
     pub component: Component<T>,
-    pub offset: Option<Number>,
+    pub offset: Number,
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -124,7 +124,7 @@ pub enum Component<T> {
         id: Identifier,
         typ: T,
         length: Number,
-        spacing: Option<Number>,
+        spacing: Number,
     },
 }
 

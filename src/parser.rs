@@ -193,7 +193,7 @@ pub fn parse_field(input: &mut Input) -> ModalResult<Field> {
     token(":").parse_next(input)?;
     let mode = parse_field_mode.parse_next(input)?;
     let typ = parse_field_type.parse_next(input)?;
-    let offset = component_offset_parser.parse_next(input).ok();
+    let offset = component_offset_parser.parse_next(input)?;
     Ok(Field {
         doc,
         id,
@@ -315,7 +315,7 @@ pub fn parse_block_cut(input: &mut Input) -> ModalResult<Block> {
 pub fn block_element_parser(input: &mut Input) -> ModalResult<BlockElement> {
     let doc = doc_comment_parser.parse_next(input)?;
     let component = component_parser.parse_next(input)?;
-    let offset = component_offset_parser.parse_next(input).ok();
+    let offset = component_offset_parser.parse_next(input)?;
     Ok(BlockElement {
         doc,
         component,
@@ -340,14 +340,11 @@ pub fn component_parser(input: &mut Input) -> ModalResult<Component> {
 
 pub fn component_array_parser(
     input: &mut Input,
-) -> ModalResult<(Number, Option<Number>)> {
+) -> ModalResult<(Number, Number)> {
     token("[").parse_next(input)?;
     let length = number_parser.parse_next(input)?;
-    let spacing = if token(";").parse_next(input).is_ok() {
-        Some(number_parser.parse_next(input)?)
-    } else {
-        None
-    };
+    token(";").parse_next(input)?;
+    let spacing = number_parser.parse_next(input)?;
     token("]").parse_next(input)?;
     Ok((length, spacing))
 }
@@ -507,7 +504,7 @@ mod test {
         assert_eq!(ast.registers.len(), 2);
         assert_eq!(ast.registers[0].id.name, "PhyConfig");
         assert_eq!(ast.registers[0].width.value, 32);
-        assert_eq!(ast.registers[0].fields.len(), 6);
+        assert_eq!(ast.registers[0].fields.len(), 5);
         assert_eq!(ast.registers[0].fields[0].id.name, "speed");
         assert_eq!(ast.registers[0].fields[0].mode, FieldMode::ReadWrite);
         assert_eq!(
@@ -548,13 +545,9 @@ mod test {
                 id: QualifiedType::from(vec!["cei", "Modulation"])
             }
         );
-        assert_eq!(ast.registers[0].fields[5].id.name, "_");
-        assert_eq!(ast.registers[0].fields[5].mode, FieldMode::Reserved);
-        assert_eq!(ast.registers[0].fields[5].typ, FieldType::Ellipsis,);
-
         assert_eq!(ast.registers[1].id.name, "PhyStatus");
         assert_eq!(ast.registers[1].width.value, 32);
-        assert_eq!(ast.registers[1].fields.len(), 4);
+        assert_eq!(ast.registers[1].fields.len(), 3);
         assert_eq!(ast.registers[1].fields[0].id.name, "carrier");
         assert_eq!(ast.registers[1].fields[0].mode, FieldMode::ReadOnly);
         assert_eq!(ast.registers[1].fields[0].typ, FieldType::Bool);
@@ -564,9 +557,6 @@ mod test {
         assert_eq!(ast.registers[1].fields[2].id.name, "data_valid");
         assert_eq!(ast.registers[1].fields[2].mode, FieldMode::ReadOnly);
         assert_eq!(ast.registers[1].fields[2].typ, FieldType::Bool);
-        assert_eq!(ast.registers[1].fields[3].id.name, "_");
-        assert_eq!(ast.registers[1].fields[3].mode, FieldMode::Reserved);
-        assert_eq!(ast.registers[1].fields[3].typ, FieldType::Ellipsis);
 
         assert_eq!(ast.blocks.len(), 2);
         assert_eq!(ast.blocks[0].id.name, "Phy");
@@ -580,11 +570,11 @@ mod test {
         );
         assert_eq!(
             ast.blocks[0].elements[0].offset,
-            Some(Number {
+            Number {
                 value: 0x200,
                 format: NumberFormat::Hex { digits: 3 },
                 span: Span::Any,
-            }),
+            },
         );
         assert_eq!(
             ast.blocks[0].elements[1].component,
@@ -595,11 +585,11 @@ mod test {
         );
         assert_eq!(
             ast.blocks[0].elements[1].offset,
-            Some(Number {
+            Number {
                 value: 0x400,
                 format: NumberFormat::Hex { digits: 3 },
                 span: Span::Any,
-            }),
+            },
         );
 
         assert_eq!(ast.blocks[1].id.name, "Nic");
@@ -614,20 +604,20 @@ mod test {
                     format: NumberFormat::Decimal { digits: 1 },
                     span: Span::Any
                 },
-                spacing: Some(Number {
+                spacing: Number {
                     value: 0x1000,
                     format: NumberFormat::Hex { digits: 4 },
                     span: Span::Any
-                }),
+                },
             }
         );
         assert_eq!(
             ast.blocks[1].elements[0].offset,
-            Some(Number {
+            Number {
                 value: 0x6000,
                 format: NumberFormat::Hex { digits: 4 },
                 span: Span::Any,
-            }),
+            },
         );
 
         println!("{ast:#?}")

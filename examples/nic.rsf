@@ -27,20 +27,16 @@ register<32> PhyConfig {
     fec: rw ethernet::Fec @ 20,
     /// Type of modulation used on the wire.
     modulation: rw cei::Modulation @ 24,
-    /// Unused trailing bits
-    _: reserved ...,
 }
 
 /// Status of an Ethernet physical interface (phy).
 register<32> PhyStatus {
     /// Indicates if a carrier signal is detected.
-    carrier: ro bool,
+    carrier: ro bool @ 0,
     /// Indicates if a signal error has been recieved by the MAU.
-    signal_error: ro bool,
+    signal_error: ro bool @ 1,
     /// Indicates that data in the signal received from the MAU is valid.
-    data_valid: ro bool,
-    /// Unused trailing bits
-    _: reserved ...,
+    data_valid: ro bool @ 2,
 }
 
 /// Phy registers.
