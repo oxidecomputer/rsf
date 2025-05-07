@@ -94,12 +94,95 @@ impl Display for ModelModules {
     }
 }
 
-struct RegisterLookup {
-    path: String,
+#[derive(Debug)]
+pub struct RegisterLookupResult {
+    pub definition: Arc<Register>,
+    pub address: u128,
+}
+
+#[derive(Debug)]
+pub struct RegisterLookup {
+    pub path: VecDeque<String>,
+    pub result: Option<RegisterLookupResult>,
+}
+
+impl From<&str> for RegisterLookup {
+    fn from(value: &str) -> Self {
+        let path = value.split("/");
+        Self {
+            path: path.into_iter().map(|x| x.to_owned()).collect(),
+            result: None,
+        }
+    }
 }
 
 impl Visitor for RegisterLookup {
-    //
+    fn block_component(
+        &mut self,
+        id: &Identifier,
+        _path: &[Model],
+        _block: Arc<Block>,
+        array_index: Option<u128>,
+        _addr: u128,
+    ) -> bool {
+        let Some(first) = self.path.front() else {
+            return false;
+        };
+
+        if &id.name == first {
+            if let Some(array_index) = array_index {
+                let Some(first) = self.path.get(1) else {
+                    return false;
+                };
+                if &array_index.to_string() == first {
+                    self.path.pop_front();
+                    self.path.pop_front();
+                    return true;
+                } else {
+                    return false;
+                }
+            }
+            self.path.pop_front();
+            true
+        } else {
+            false
+        }
+    }
+
+    fn register_component(
+        &mut self,
+        id: &Identifier,
+        _path: &[Model],
+        reg: Arc<Register>,
+        array_index: Option<u128>,
+        addr: u128,
+    ) {
+        if self.path.len() > 1 {
+            return;
+        }
+        let Some(first) = self.path.front() else {
+            return;
+        };
+        if &id.name == first {
+            if let Some(array_index) = array_index {
+                let Some(first) = self.path.get(1) else {
+                    return;
+                };
+                if &array_index.to_string() == first {
+                    self.path.pop_front();
+                    self.path.pop_front();
+                    return;
+                } else {
+                    return;
+                }
+            }
+            self.path.pop_front();
+            self.result = Some(RegisterLookupResult {
+                definition: reg.clone(),
+                address: addr,
+            })
+        }
+    }
 }
 
 impl Model {
@@ -380,6 +463,9 @@ impl ModelModules {
             }));
         }
 
+        // TODO only intended for root and this is a recursive function
+        //mm.check()?;
+
         Ok(mm)
     }
 
@@ -501,10 +587,25 @@ impl ModelModules {
             }
         }
     }
+
+    #[allow(dead_code)]
+    fn check(&self) -> Result<()> {
+        self.check_main_block()?;
+        Ok(())
+    }
+
+    fn check_main_block(&self) -> Result<()> {
+        self.root
+            .blocks
+            .iter()
+            .find(|x| x.id.name == "Main")
+            .ok_or(anyhow!("main block not found"))?;
+        Ok(())
+    }
 }
 
 impl Model {
-    pub fn accept<V: Visitor>(&self, v: &V) {
+    pub fn accept<V: Visitor>(&self, v: &mut V) {
         for e in &self.enums {
             v.enumeration(e.clone());
         }
@@ -513,33 +614,47 @@ impl Model {
         }
         for b in &self.blocks {
             v.block(b.clone(), 0);
-            b.accept(v, 0);
+            if b.id.name == "Main" {
+                b.accept(v, 0);
+            }
         }
     }
 }
 
 impl Block {
-    pub fn accept<V: Visitor>(&self, v: &V, addr: u128) {
+    pub fn accept<V: Visitor>(&self, v: &mut V, addr: u128) {
         for e in &self.elements {
             let addr = addr + e.offset.value;
             v.block_element(e, addr);
             v.component(&e.component, addr);
+            e.component.accept(v, addr);
         }
     }
 }
 
 impl Component {
-    pub fn accept<V: Visitor>(&self, v: &V, addr: u128) {
+    pub fn accept<V: Visitor>(&self, v: &mut V, addr: u128) {
         match self {
             Self::Single { id, typ } => {
                 v.single_component(id, typ, addr);
                 match &typ.typ {
                     ComponentUserType::Register(r) => {
-                        v.register_component(&typ.module_path, r.clone(), addr);
+                        v.register_component(
+                            id,
+                            &typ.module_path,
+                            r.clone(),
+                            None,
+                            addr,
+                        );
                     }
                     ComponentUserType::Block(b) => {
-                        if v.block_component(&typ.module_path, b.clone(), addr)
-                        {
+                        if v.block_component(
+                            id,
+                            &typ.module_path,
+                            b.clone(),
+                            None,
+                            addr,
+                        ) {
                             b.accept(v, addr);
                         }
                     }
@@ -553,7 +668,29 @@ impl Component {
             } => {
                 for i in 0..length.value {
                     let addr = addr + i * spacing.value;
-                    v.array_component(id, typ, length, spacing, addr)
+                    v.array_component(id, typ, length, spacing, addr);
+                    match &typ.typ {
+                        ComponentUserType::Register(r) => {
+                            v.register_component(
+                                id,
+                                &typ.module_path,
+                                r.clone(),
+                                Some(i),
+                                addr,
+                            );
+                        }
+                        ComponentUserType::Block(b) => {
+                            if v.block_component(
+                                id,
+                                &typ.module_path,
+                                b.clone(),
+                                Some(i),
+                                addr,
+                            ) {
+                                b.accept(v, addr);
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -561,7 +698,7 @@ impl Component {
 }
 
 impl Register {
-    pub fn accept<V: Visitor>(&self, v: &V) {
+    pub fn accept<V: Visitor>(&self, v: &mut V) {
         for f in &self.fields {
             v.field(f);
         }
@@ -569,12 +706,12 @@ impl Register {
 }
 
 pub trait Visitor {
-    fn register(&self, _reg: Arc<Register>) {}
-    fn field(&self, _field: &Field) {}
-    fn block(&self, _block: Arc<Block>, _addr: u128) {}
-    fn enumeration(&self, _enum: Arc<Enum>) {}
-    fn block_element(&self, _element: &BlockElement, _addr: u128) {}
-    fn component(&self, _component: &Component, _addr: u128) {}
+    fn register(&mut self, _reg: Arc<Register>) {}
+    fn field(&mut self, _field: &Field) {}
+    fn block(&mut self, _block: Arc<Block>, _addr: u128) {}
+    fn enumeration(&mut self, _enum: Arc<Enum>) {}
+    fn block_element(&mut self, _element: &BlockElement, _addr: u128) {}
+    fn component(&mut self, _component: &Component, _addr: u128) {}
     fn single_component(
         &self,
         _id: &Identifier,
@@ -583,7 +720,7 @@ pub trait Visitor {
     ) {
     }
     fn array_component(
-        &self,
+        &mut self,
         _id: &Identifier,
         _typ: &QualifiedComponentType,
         _length: &Number,
@@ -592,18 +729,22 @@ pub trait Visitor {
     ) {
     }
     fn register_component(
-        &self,
+        &mut self,
+        _id: &Identifier,
         _path: &[Model],
         _reg: Arc<Register>,
+        _array_index: Option<u128>,
         _addr: u128,
     ) {
     }
     /// Visit a block component. Return value indicates whether to recurse
     /// into the block.
     fn block_component(
-        &self,
+        &mut self,
+        _id: &Identifier,
         _path: &[Model],
         _block: Arc<Block>,
+        _array_index: Option<u128>,
         _addr: u128,
     ) -> bool {
         true
@@ -784,8 +925,8 @@ mod test {
             0x400,
         );
 
-        // check Nic
-        assert_eq!(&resolved.root.blocks[1].id.name, "Nic");
+        // check Main
+        assert_eq!(&resolved.root.blocks[1].id.name, "Main");
         check_block_block_array_component(
             &resolved.root.blocks[1].elements[0],
             "phys",
@@ -795,5 +936,29 @@ mod test {
             0x1000,
             0x6000,
         );
+    }
+
+    #[test]
+    fn register_lookup_visitor() {
+        let ast = match parse("examples/nic.rsf".into()) {
+            Ok(ast) => ast,
+            Err(ref e) => {
+                panic!("parsing failed: {}", e);
+            }
+        };
+
+        let resolved =
+            ModelModules::resolve(&ast, String::from("")).expect("resolve ast");
+
+        let mut lookup = RegisterLookup::from("phys/1/status");
+        resolved.root.accept(&mut lookup);
+
+        let Some(result) = &lookup.result else {
+            panic!("lookup for phys/1/status returned no result");
+        };
+
+        assert_eq!(result.address, 0x7400);
+
+        println!("{lookup:#?}");
     }
 }

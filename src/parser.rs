@@ -592,7 +592,7 @@ mod test {
             },
         );
 
-        assert_eq!(ast.blocks[1].id.name, "Nic");
+        assert_eq!(ast.blocks[1].id.name, "Main");
         assert_eq!(ast.blocks[1].elements.len(), 1);
         assert_eq!(
             ast.blocks[1].elements[0].component,
