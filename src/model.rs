@@ -120,7 +120,7 @@ impl Visitor for RegisterLookup {
     fn block_component(
         &mut self,
         id: &Identifier,
-        _path: &[Model],
+        _path: &[Identifier],
         _block: Arc<Block>,
         array_index: Option<u128>,
         _addr: u128,
@@ -152,7 +152,7 @@ impl Visitor for RegisterLookup {
     fn register_component(
         &mut self,
         id: &Identifier,
-        _path: &[Model],
+        _path: &[Identifier],
         reg: Arc<Register>,
         array_index: Option<u128>,
         addr: u128,
@@ -615,47 +615,46 @@ impl Model {
         for b in &self.blocks {
             v.block(b.clone(), 0);
             if b.id.name == "Main" {
-                b.accept(v, 0);
+                b.accept(v, 0, Vec::default());
             }
         }
     }
 }
 
 impl Block {
-    pub fn accept<V: Visitor>(&self, v: &mut V, addr: u128) {
+    pub fn accept<V: Visitor>(
+        &self,
+        v: &mut V,
+        addr: u128,
+        path: Vec<Identifier>,
+    ) {
         for e in &self.elements {
             let addr = addr + e.offset.value;
             v.block_element(e, addr);
             v.component(&e.component, addr);
-            e.component.accept(v, addr);
+            e.component.accept(v, addr, path.clone());
         }
     }
 }
 
 impl Component {
-    pub fn accept<V: Visitor>(&self, v: &mut V, addr: u128) {
+    pub fn accept<V: Visitor>(
+        &self,
+        v: &mut V,
+        addr: u128,
+        mut path: Vec<Identifier>,
+    ) {
         match self {
             Self::Single { id, typ } => {
                 v.single_component(id, typ, addr);
                 match &typ.typ {
                     ComponentUserType::Register(r) => {
-                        v.register_component(
-                            id,
-                            &typ.module_path,
-                            r.clone(),
-                            None,
-                            addr,
-                        );
+                        v.register_component(id, &path, r.clone(), None, addr);
                     }
                     ComponentUserType::Block(b) => {
-                        if v.block_component(
-                            id,
-                            &typ.module_path,
-                            b.clone(),
-                            None,
-                            addr,
-                        ) {
-                            b.accept(v, addr);
+                        if v.block_component(id, &path, b.clone(), None, addr) {
+                            path.push(id.clone());
+                            b.accept(v, addr, path);
                         }
                     }
                 }
@@ -673,21 +672,24 @@ impl Component {
                         ComponentUserType::Register(r) => {
                             v.register_component(
                                 id,
-                                &typ.module_path,
+                                &path,
                                 r.clone(),
                                 Some(i),
                                 addr,
                             );
                         }
                         ComponentUserType::Block(b) => {
+                            let mut path = path.clone();
+                            path.push(id.clone());
+                            path.push(Identifier::new(&i.to_string()));
                             if v.block_component(
                                 id,
-                                &typ.module_path,
+                                &path,
                                 b.clone(),
                                 Some(i),
                                 addr,
                             ) {
-                                b.accept(v, addr);
+                                b.accept(v, addr, path);
                             }
                         }
                     }
@@ -731,7 +733,7 @@ pub trait Visitor {
     fn register_component(
         &mut self,
         _id: &Identifier,
-        _path: &[Model],
+        _path: &[Identifier],
         _reg: Arc<Register>,
         _array_index: Option<u128>,
         _addr: u128,
@@ -742,7 +744,7 @@ pub trait Visitor {
     fn block_component(
         &mut self,
         _id: &Identifier,
-        _path: &[Model],
+        _path: &[Identifier],
         _block: Arc<Block>,
         _array_index: Option<u128>,
         _addr: u128,
