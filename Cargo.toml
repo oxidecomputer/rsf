@@ -8,6 +8,11 @@ anyhow = "1.0.98"
 camino = "1.1.9"
 colored = "3.0.0"
 winnow = "0.7.7"
+syn = "2.0"
+prettyplease = "0.2"
+proc-macro2 = "1.0.95"
+quote = "1.0.40"
+bitset = { git = "https://github.com/oxidecomputer/bitset" }
 
 [dev-dependencies]
 expectorate = "1.1.0"

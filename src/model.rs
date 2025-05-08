@@ -20,6 +20,20 @@ pub type FieldType = crate::common::FieldType<QualifiedFieldType>;
 pub type Register = crate::common::Register<FieldType>;
 pub type Field = crate::common::Field<FieldType>;
 
+impl FieldType {
+    pub fn width(&self) -> u128 {
+        match self {
+            Self::Bool => 1,
+            Self::Bitfield { width } => width.value,
+            Self::User { id } => {
+                let FieldUserType::Enum(e) = &id.typ;
+                e.width.value
+            }
+            Self::Ellipsis => todo!(),
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum ComponentUserType {
     Register(Arc<Register>),
