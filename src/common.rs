@@ -14,7 +14,7 @@ pub struct Enum {
 impl Emit for Enum {
     fn emit(&self, f: &mut impl std::fmt::Write) -> std::fmt::Result {
         for x in &self.doc {
-            writeln!(f, "///{}", x)?;
+            writeln!(f, "///{x}")?;
         }
         writeln!(f, "enum<{}> {} {{", self.width.to_code(), self.id.name)?;
         for x in &self.alternatives {
@@ -35,7 +35,7 @@ pub struct Alternative {
 impl Emit for Alternative {
     fn emit(&self, f: &mut impl std::fmt::Write) -> std::fmt::Result {
         for x in &self.doc {
-            writeln!(f, "    ///{}", x)?;
+            writeln!(f, "    ///{x}")?;
         }
         writeln!(f, "    {} = {},", self.id.name, self.value.to_code())
     }

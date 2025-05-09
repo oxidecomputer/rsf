@@ -474,7 +474,7 @@ mod test {
         let ast = match parse_ast.parse(s) {
             Ok(ast) => ast,
             Err(ref e) => {
-                panic!("parsing failed: {}", e);
+                panic!("parsing failed: {e}");
             }
         };
         assert_eq!(ast.use_statements.len(), 2);

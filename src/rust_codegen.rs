@@ -429,7 +429,7 @@ mod test {
         let ast = match parse("examples/nic.rsf".into()) {
             Ok(ast) => ast,
             Err(ref e) => {
-                panic!("parsing failed: {}", e);
+                panic!("parsing failed: {e}");
             }
         };
 

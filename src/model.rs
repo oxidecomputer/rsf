@@ -100,7 +100,7 @@ impl Display for ModelModules {
         write!(f, "{}", self.root)?;
 
         for submodule in self.used.values() {
-            write!(f, "{}", submodule)?;
+            write!(f, "{submodule}")?;
         }
 
         Ok(())
@@ -218,13 +218,13 @@ impl Display for Model {
         writeln!(f, "{}", name.magenta())?;
         writeln!(f, "{}", "=".repeat(name.len()).dimmed())?;
         for x in &self.enums {
-            writeln!(f, "{}", x)?;
+            writeln!(f, "{x}")?;
         }
         for x in &self.registers {
-            writeln!(f, "{}", x)?;
+            writeln!(f, "{x}")?;
         }
         for x in &self.blocks {
-            writeln!(f, "{}", x)?;
+            writeln!(f, "{x}")?;
         }
         Ok(())
     }
@@ -242,7 +242,7 @@ impl Display for Register {
             ">".dimmed(),
         )?;
         for x in &self.fields {
-            writeln!(f, "  {}", x)?;
+            writeln!(f, "  {x}")?;
         }
         Ok(())
     }
@@ -280,7 +280,7 @@ impl Display for Enum {
             ">".dimmed(),
         )?;
         for x in &self.alternatives {
-            writeln!(f, "  {}", x)?;
+            writeln!(f, "  {x}")?;
         }
         Ok(())
     }
@@ -290,7 +290,7 @@ impl Display for Block {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         writeln!(f, "{} {}", "block".blue(), self.id.name.cyan())?;
         for x in &self.elements {
-            writeln!(f, "  {}", x)?;
+            writeln!(f, "  {x}")?;
         }
         Ok(())
     }
@@ -402,8 +402,8 @@ impl Typename for QualifiedFieldType {
 impl Display for ComponentUserType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Register(x) => write!(f, "register {}", x),
-            Self::Block(x) => write!(f, "block {}", x),
+            Self::Register(x) => write!(f, "register {x}"),
+            Self::Block(x) => write!(f, "block {x}"),
         }
     }
 }
@@ -861,7 +861,7 @@ mod test {
         let ast = match parse("examples/nic.rsf".into()) {
             Ok(ast) => ast,
             Err(ref e) => {
-                panic!("parsing failed: {}", e);
+                panic!("parsing failed: {e}");
             }
         };
 
@@ -963,7 +963,7 @@ mod test {
         let ast = match parse("examples/nic.rsf".into()) {
             Ok(ast) => ast,
             Err(ref e) => {
-                panic!("parsing failed: {}", e);
+                panic!("parsing failed: {e}");
             }
         };
 
