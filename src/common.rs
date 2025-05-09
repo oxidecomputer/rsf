@@ -137,7 +137,6 @@ pub enum FieldType<T: Display + Typename> {
     Bool,
     Bitfield { width: Number },
     User { id: T },
-    Ellipsis,
 }
 
 impl<T: Display + Typename> Display for FieldType<T> {
@@ -148,7 +147,6 @@ impl<T: Display + Typename> Display for FieldType<T> {
                 write!(f, "{}{}", "b".cyan(), width.value.to_string().cyan())
             }
             Self::User { id } => write!(f, "{}", id.typename()),
-            Self::Ellipsis => write!(f, "{}", "...".cyan()),
         }
     }
 }

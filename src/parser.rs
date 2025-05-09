@@ -204,13 +204,8 @@ pub fn parse_field(input: &mut Input) -> ModalResult<Field> {
 }
 
 pub fn parse_field_type(input: &mut Input) -> ModalResult<FieldType> {
-    alt((
-        parse_elipsis_type,
-        parse_bitfield_type,
-        parse_bool_type,
-        parse_component_type,
-    ))
-    .parse_next(input)
+    alt((parse_bitfield_type, parse_bool_type, parse_component_type))
+        .parse_next(input)
 }
 
 pub fn parse_bool_type(input: &mut Input) -> ModalResult<FieldType> {
@@ -228,11 +223,6 @@ pub fn parse_component_type(input: &mut Input) -> ModalResult<FieldType> {
     Ok(FieldType::User {
         id: token(parse_qualified_type).parse_next(input)?,
     })
-}
-
-pub fn parse_elipsis_type(input: &mut Input) -> ModalResult<FieldType> {
-    token("...").parse_next(input)?;
-    Ok(FieldType::Ellipsis)
 }
 
 pub fn parse_bool_type_impl(input: &mut Input) -> ModalResult<()> {

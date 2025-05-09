@@ -29,7 +29,6 @@ impl FieldType {
                 let FieldUserType::Enum(e) = &id.typ;
                 e.width.value
             }
-            Self::Ellipsis => todo!(),
         }
     }
 }
@@ -498,7 +497,6 @@ impl ModelModules {
             ast::FieldType::Bitfield { width } => FieldType::Bitfield {
                 width: width.clone(),
             },
-            ast::FieldType::Ellipsis => FieldType::Ellipsis,
             ast::FieldType::User { id } => FieldType::User {
                 id: self.resolve_field_path(&id.path)?,
             },

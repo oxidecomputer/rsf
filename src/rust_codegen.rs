@@ -146,7 +146,6 @@ impl Visitor for CodegenVisitor {
                         })
                     }
                 }
-                FieldType::Ellipsis => todo!(),
             }
         }
         let addr_type = &self.addr_type;

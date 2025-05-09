@@ -108,7 +108,6 @@ impl Emit for FieldType {
             Self::Bool => write!(f, "bool"),
             Self::Bitfield { width } => write!(f, "b{}", width.value),
             Self::User { id } => id.emit(f),
-            Self::Ellipsis => write!(f, "..."),
         }
     }
 }
