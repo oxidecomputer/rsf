@@ -154,7 +154,7 @@ impl Visitor for CodegenVisitor {
             format_ident!("{}Instance", reg.id.name.to_case(Case::Pascal));
 
         self.register_definitions.extend(quote! {
-            #[derive(Default)]
+            #[derive(Default, Debug)]
             pub struct #name(BitSet<#width>);
             impl #name {
                 #fields
@@ -232,7 +232,7 @@ impl Visitor for CodegenVisitor {
         let width = proc_macro2::Literal::u128_unsuffixed(e.width.value);
 
         self.enum_definitions.extend(quote! {
-            #[derive(num_enum::TryFromPrimitive)]
+            #[derive(num_enum::TryFromPrimitive, PartialEq, Debug)]
             #[repr(#repr)]
             pub enum #name {
                 #alts
@@ -268,7 +268,7 @@ impl Visitor for CodegenVisitor {
         let addr_type = &self.addr_type;
 
         self.block_definitions.extend(quote! {
-            #[derive(Default)]
+            #[derive(Default, Debug)]
             pub struct #block_name{ addr: #addr_type }
         });
 
@@ -400,30 +400,7 @@ mod test {
     use crate::parser::parse;
     use expectorate::assert_contents;
 
-    #[allow(dead_code)]
-    #[cfg(feature = "test_generated")]
-    mod generated {
-        use crate::rust_rpi;
-        include!("../test_data/nic_rpi.rs");
-    }
-
-    #[cfg(feature = "test_generated")]
-    #[test]
-    fn run_generated_code() {
-        use crate::rust_rpi::{DummyPlatform, RegisterInstance};
-        use generated::*;
-
-        let platform = DummyPlatform::default();
-
-        let rpi = Client::default();
-        rpi.phys(1)
-            .config()
-            .update(&platform, |c: &mut PhyConfig| {
-                Ok(c.set_speed(ethernet::DataRate::G200))
-            })
-            .unwrap();
-    }
-
+    // Test code generation in terms of expected syntax.
     #[test]
     fn test_codegen() {
         let ast = match parse("examples/nic.rsf".into()) {
@@ -439,5 +416,43 @@ mod test {
         let output =
             generate_rpi(&resolved, quote! { u32 }).expect("generate nic rpi");
         assert_contents("test_data/nic_rpi.rs", &output);
+    }
+
+    // Kersplat generated code right here!
+    #[allow(dead_code)]
+    #[cfg(feature = "test_generated")]
+    mod generated {
+        use crate::rust_rpi;
+        include!("../test_data/nic_rpi.rs");
+    }
+
+    // Run a test program against generated code
+    #[cfg(feature = "test_generated")]
+    #[test]
+    fn run_generated_code() {
+        use crate::rust_rpi::{DummyPlatform, RegisterInstance};
+        use generated::*;
+
+        // Initialize the underlying platform. For testing this is just a
+        // dummy platform.
+        let platform = DummyPlatform::default();
+
+        // Create the RPI client
+        let rpi = Client::default();
+
+        // Poke at some config
+        rpi.phys(1)
+            .config()
+            .update(&platform, |c: &mut PhyConfig| {
+                Ok(c.set_speed(ethernet::DataRate::G50))
+            })
+            .unwrap();
+
+        // Read some config, status
+        let config = rpi.phys(1).config().read(&platform).unwrap();
+        assert_eq!(config.get_speed(), ethernet::DataRate::G50);
+
+        let status = rpi.phys(2).status().read(&platform).unwrap();
+        assert_eq!(status.get_carrier(), false);
     }
 }

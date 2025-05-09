@@ -1,6 +1,6 @@
 use bitset::BitSet;
 use anyhow::Result;
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct PhyConfig(BitSet<32>);
 impl PhyConfig {
     pub fn get_speed(&self) -> ethernet::DataRate {
@@ -58,7 +58,7 @@ impl rust_rpi::RegisterInstance<PhyConfig, u32> for PhyConfigInstance {
         self.write(platform, value)
     }
 }
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct PhyStatus(BitSet<32>);
 impl PhyStatus {
     pub fn get_carrier(&self) -> bool {
@@ -95,7 +95,7 @@ impl rust_rpi::RegisterInstance<PhyStatus, u32> for PhyStatusInstance {
         self.write(platform, value)
     }
 }
-#[derive(num_enum::TryFromPrimitive)]
+#[derive(num_enum::TryFromPrimitive, PartialEq, Debug)]
 #[repr(u8)]
 pub enum Lanes {
     Single = 0b000,
@@ -115,11 +115,11 @@ impl TryFrom<BitSet<2>> for Lanes {
         Ok(Self::try_from(value.to_int())?)
     }
 }
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct PhyInstance {
     addr: u32,
 }
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct Client {
     addr: u32,
 }
@@ -145,7 +145,7 @@ impl PhyInstance {
 pub mod cei {
     use bitset::BitSet;
     use anyhow::Result;
-    #[derive(num_enum::TryFromPrimitive)]
+    #[derive(num_enum::TryFromPrimitive, PartialEq, Debug)]
     #[repr(u8)]
     pub enum Modulation {
         Nrz = 0b0,
@@ -166,7 +166,7 @@ pub mod cei {
 pub mod ethernet {
     use bitset::BitSet;
     use anyhow::Result;
-    #[derive(num_enum::TryFromPrimitive)]
+    #[derive(num_enum::TryFromPrimitive, PartialEq, Debug)]
     #[repr(u8)]
     pub enum Reach {
         Kr = 0b000,
@@ -188,7 +188,7 @@ pub mod ethernet {
             Ok(Self::try_from(value.to_int())?)
         }
     }
-    #[derive(num_enum::TryFromPrimitive)]
+    #[derive(num_enum::TryFromPrimitive, PartialEq, Debug)]
     #[repr(u8)]
     pub enum Fec {
         None = 0b00,
@@ -206,7 +206,7 @@ pub mod ethernet {
             Ok(Self::try_from(value.to_int())?)
         }
     }
-    #[derive(num_enum::TryFromPrimitive)]
+    #[derive(num_enum::TryFromPrimitive, PartialEq, Debug)]
     #[repr(u8)]
     pub enum DataRate {
         G50 = 0b00,
