@@ -10,10 +10,17 @@ colored = "3.0.0"
 winnow = "0.7.7"
 syn = "2.0"
 prettyplease = "0.2"
+num_enum = "0.7.3"
 proc-macro2 = "1.0.95"
 quote = "1.0.40"
+expectorate = "1.1"
+convert_case = "0.8.0"
 bitset = { git = "https://github.com/oxidecomputer/bitset" }
+bitset-macro = { git = "https://github.com/oxidecomputer/bitset" }
 
 [dev-dependencies]
 expectorate = "1.1.0"
+
+[features]
+test_generated = []
 

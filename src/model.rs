@@ -356,14 +356,17 @@ impl Display for QualifiedComponentType {
 
 impl Typename for QualifiedComponentType {
     fn typename(&self) -> String {
-        let sep = "::".dimmed().to_string();
-        let path = self
-            .module_path
-            .iter()
-            .map(|model| model.id.as_str().magenta().to_string())
-            .collect::<Vec<_>>()
-            .join(sep.as_str());
-        format!("{}{}{}", path, sep, self.typ.typename().cyan())
+        let path = self.module_path.iter().filter(|x| !x.id.is_empty());
+        if self.module_path.len() == 1 {
+            format!("{}", self.typ.typename().cyan())
+        } else {
+            let sep = "::".dimmed().to_string();
+            let path = path
+                .map(|model| model.id.as_str().magenta().to_string())
+                .collect::<Vec<_>>()
+                .join(sep.as_str());
+            format!("{}{}{}", path, sep, self.typ.typename().cyan())
+        }
     }
 }
 
@@ -383,14 +386,17 @@ impl Display for QualifiedFieldType {
 // TODO exact same as QualifiedComponentType
 impl Typename for QualifiedFieldType {
     fn typename(&self) -> String {
-        let sep = "::".dimmed().to_string();
-        let path = self
-            .module_path
-            .iter()
-            .map(|model| model.id.as_str().magenta().to_string())
-            .collect::<Vec<_>>()
-            .join(sep.as_str());
-        format!("{}{}{}", path, sep, self.typ.typename().cyan())
+        let path = self.module_path.iter().filter(|x| !x.id.is_empty());
+        if self.module_path.len() == 1 {
+            format!("{}", self.typ.typename().cyan())
+        } else {
+            let sep = "::".dimmed().to_string();
+            let path = path
+                .map(|model| model.id.as_str().magenta().to_string())
+                .collect::<Vec<_>>()
+                .join(sep.as_str());
+            format!("{}{}{}", path, sep, self.typ.typename().cyan())
+        }
     }
 }
 
@@ -729,7 +735,7 @@ pub trait Visitor {
     fn block_element(&mut self, _element: &BlockElement, _addr: u128) {}
     fn component(&mut self, _component: &Component, _addr: u128) {}
     fn single_component(
-        &self,
+        &mut self,
         _id: &Identifier,
         _typ: &QualifiedComponentType,
         _addr: u128,
