@@ -1,6 +1,20 @@
 use ethernet;
 use cei;
 
+/// Register programming interface for this NIC.
+block Main {
+    /// A block for each of the four phys.
+    phys: Phy[4; 0x1000] @ 0x6000,
+}
+
+/// Phy registers.
+block Phy {
+    /// Configuration register.
+    config: PhyConfig @ 0x200,
+    /// Status register.
+    status: PhyStatus @ 0x400,
+}
+
 /// Number of lanes per phy.
 enum<2> Lanes {
     /// One lane per phy
@@ -37,19 +51,4 @@ register<32> PhyStatus {
     signal_error: ro bool @ 1,
     /// Indicates that data in the signal received from the MAU is valid.
     data_valid: ro bool @ 2,
-}
-
-/// Phy registers.
-block Phy {
-    /// Configuration register.
-    config: PhyConfig @ 0x200,
-    /// Status register.
-    status: PhyStatus @ 0x400,
-}
-
-/// Nic blocks.
-/// Phy registers.
-block Main {
-    /// A block for each of the four phys.
-    phys: Phy[4; 0x1000] @ 0x6000,
 }

@@ -548,44 +548,10 @@ mod test {
         assert_eq!(ast.registers[1].fields[2].mode, FieldMode::ReadOnly);
         assert_eq!(ast.registers[1].fields[2].typ, FieldType::Bool);
 
-        assert_eq!(ast.blocks.len(), 2);
-        assert_eq!(ast.blocks[0].id.name, "Phy");
-        assert_eq!(ast.blocks[0].elements.len(), 2);
+        assert_eq!(ast.blocks[0].id.name, "Main");
+        assert_eq!(ast.blocks[0].elements.len(), 1);
         assert_eq!(
             ast.blocks[0].elements[0].component,
-            Component::Single {
-                id: Identifier::new("config"),
-                typ: QualifiedType::from(vec!["PhyConfig"])
-            }
-        );
-        assert_eq!(
-            ast.blocks[0].elements[0].offset,
-            Number {
-                value: 0x200,
-                format: NumberFormat::Hex { digits: 3 },
-                span: Span::Any,
-            },
-        );
-        assert_eq!(
-            ast.blocks[0].elements[1].component,
-            Component::Single {
-                id: Identifier::new("status"),
-                typ: QualifiedType::from(vec!["PhyStatus"])
-            }
-        );
-        assert_eq!(
-            ast.blocks[0].elements[1].offset,
-            Number {
-                value: 0x400,
-                format: NumberFormat::Hex { digits: 3 },
-                span: Span::Any,
-            },
-        );
-
-        assert_eq!(ast.blocks[1].id.name, "Main");
-        assert_eq!(ast.blocks[1].elements.len(), 1);
-        assert_eq!(
-            ast.blocks[1].elements[0].component,
             Component::Array {
                 id: Identifier::new("phys"),
                 typ: QualifiedType::from(vec!["Phy"]),
@@ -602,10 +568,44 @@ mod test {
             }
         );
         assert_eq!(
-            ast.blocks[1].elements[0].offset,
+            ast.blocks[0].elements[0].offset,
             Number {
                 value: 0x6000,
                 format: NumberFormat::Hex { digits: 4 },
+                span: Span::Any,
+            },
+        );
+
+        assert_eq!(ast.blocks.len(), 2);
+        assert_eq!(ast.blocks[1].id.name, "Phy");
+        assert_eq!(ast.blocks[1].elements.len(), 2);
+        assert_eq!(
+            ast.blocks[1].elements[0].component,
+            Component::Single {
+                id: Identifier::new("config"),
+                typ: QualifiedType::from(vec!["PhyConfig"])
+            }
+        );
+        assert_eq!(
+            ast.blocks[1].elements[0].offset,
+            Number {
+                value: 0x200,
+                format: NumberFormat::Hex { digits: 3 },
+                span: Span::Any,
+            },
+        );
+        assert_eq!(
+            ast.blocks[1].elements[1].component,
+            Component::Single {
+                id: Identifier::new("status"),
+                typ: QualifiedType::from(vec!["PhyStatus"])
+            }
+        );
+        assert_eq!(
+            ast.blocks[1].elements[1].offset,
+            Number {
+                value: 0x400,
+                format: NumberFormat::Hex { digits: 3 },
                 span: Span::Any,
             },
         );

@@ -182,6 +182,10 @@ impl Emit for Ast {
         }
         writeln!(f)?;
 
+        for x in &self.blocks {
+            x.emit(f)?;
+        }
+
         for x in &self.enums {
             x.emit(f)?;
         }
@@ -191,9 +195,6 @@ impl Emit for Ast {
             x.emit(f)?;
         }
 
-        for x in &self.blocks {
-            x.emit(f)?;
-        }
         Ok(())
     }
 }

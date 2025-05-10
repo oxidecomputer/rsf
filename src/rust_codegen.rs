@@ -444,7 +444,8 @@ mod test {
         rpi.phys(1)
             .config()
             .update(&platform, |c: &mut PhyConfig| {
-                Ok(c.set_speed(ethernet::DataRate::G50))
+                c.set_speed(ethernet::DataRate::G50);
+                Ok(())
             })
             .unwrap();
 
@@ -453,6 +454,6 @@ mod test {
         assert_eq!(config.get_speed(), ethernet::DataRate::G50);
 
         let status = rpi.phys(2).status().read(&platform).unwrap();
-        assert_eq!(status.get_carrier(), false);
+        assert!(!status.get_carrier());
     }
 }
