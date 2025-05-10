@@ -492,8 +492,6 @@ impl ModelModules {
             }
         }
 
-        println!("{blocks:#?}");
-
         blocks.sort_by(|x, y| y.refs.cmp(&x.refs));
 
         for b in &blocks {
@@ -915,7 +913,6 @@ mod test {
 
         let resolved =
             ModelModules::resolve(&ast, String::from("")).expect("resolve ast");
-        println!("{resolved}");
 
         // check PhyConfig
         assert_eq!(resolved.root.registers[0].id.name, "PhyConfig");

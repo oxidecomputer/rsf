@@ -49,7 +49,7 @@ impl PhyConfig {
 }
 ///Instance of a [`PhyConfig`]
 pub struct PhyConfigInstance {
-    addr: u32,
+    pub addr: u32,
 }
 impl rust_rpi::RegisterInstance<PhyConfig, u32> for PhyConfigInstance {
     fn read(&self, platform: &impl rust_rpi::Platform<u32>) -> Result<PhyConfig> {
@@ -91,7 +91,7 @@ impl PhyStatus {
 }
 ///Instance of a [`PhyStatus`]
 pub struct PhyStatusInstance {
-    addr: u32,
+    pub addr: u32,
 }
 impl rust_rpi::RegisterInstance<PhyStatus, u32> for PhyStatusInstance {
     fn read(&self, platform: &impl rust_rpi::Platform<u32>) -> Result<PhyStatus> {
@@ -143,12 +143,12 @@ impl TryFrom<BitSet<2>> for Lanes {
 /// Phy registers.
 #[derive(Default, Debug)]
 pub struct PhyInstance {
-    addr: u32,
+    pub addr: u32,
 }
 /// Register programming interface for this NIC.
 #[derive(Default, Debug)]
 pub struct Client {
-    addr: u32,
+    pub addr: u32,
 }
 impl Client {
     /// A block for each of the four phys.

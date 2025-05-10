@@ -3,12 +3,14 @@
 use crate::common::{FieldMode, NumberFormat, Typename};
 use crate::model::{Block, Component, FieldType, FieldUserType, Register};
 use crate::model::{ModelModules, Visitor};
-use anyhow::Result;
+use anyhow::{Result, anyhow};
 use camino::Utf8Path;
+use camino_tempfile::NamedUtf8TempFile;
 use convert_case::{Case, Casing};
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 use std::collections::BTreeMap;
+use std::io::Write;
 use std::str::FromStr;
 use std::sync::Arc;
 
@@ -177,7 +179,7 @@ impl Visitor for CodegenVisitor {
 
             #[doc = #instance_doc]
             pub struct #instance_name {
-                addr: #addr_type,
+                pub addr: #addr_type,
             }
 
             impl rust_rpi::RegisterInstance<#name, #addr_type> for #instance_name {
@@ -292,7 +294,9 @@ impl Visitor for CodegenVisitor {
         self.block_definitions.extend(quote! {
             #[doc = #doc]
             #[derive(Default, Debug)]
-            pub struct #block_name{ addr: #addr_type }
+            pub struct #block_name{
+                pub addr: #addr_type
+            }
         });
 
         for element in &block.elements {
@@ -313,10 +317,8 @@ impl Visitor for CodegenVisitor {
                 Component::Single { id, typ } => {
                     let method_name =
                         format_ident!("{}", id.name.to_case(Case::Snake));
-                    let type_name = format_ident!(
-                        "{}Instance",
-                        typ.typename().to_case(Case::Pascal)
-                    );
+                    let type_name =
+                        typename_to_qualified_ident(typ, "Instance");
                     tokens.extend(quote! {
                         #[doc = #doc]
                         pub fn #method_name(&self) -> #type_name {
@@ -336,10 +338,8 @@ impl Visitor for CodegenVisitor {
                 } => {
                     let method_name =
                         format_ident!("{}", id.name.to_case(Case::Snake));
-                    let type_name = format_ident!(
-                        "{}Instance",
-                        typ.typename().to_case(Case::Pascal)
-                    );
+                    let type_name =
+                        typename_to_qualified_ident(typ, "Instance");
                     let spacing = proc_macro2::Literal::from_str(&format!(
                         "0x{:x}",
                         spacing.value
@@ -419,7 +419,22 @@ pub fn generate_rpi(
 ) -> Result<String> {
     let tokens = generate_rpi_rec(model, addr_type, local_dev)?;
 
-    let file: syn::File = syn::parse2(tokens)?;
+    let file: syn::File = syn::parse2(tokens.clone()).map_err(|e| {
+        let generated = tokens
+            .to_string()
+            .replace(";", ";\n")
+            .replace("{", "{\n")
+            .replace("}", "}\n");
+
+        let tmp = NamedUtf8TempFile::new().unwrap();
+        let (mut file, path) = tmp.keep().unwrap();
+        file.write_all(generated.as_bytes()).unwrap();
+        anyhow!(
+            "token parsing failed: {e:#?}, rust source file written to {}.
+            Try running rustfmt over that file to see whare the issues are.",
+            path,
+        )
+    })?;
     let code = prettyplease::unparse(&file);
     Ok(code)
 }
@@ -462,6 +477,38 @@ fn use_statements(local_dev: bool) -> TokenStream {
         });
     }
     tokens
+}
+
+fn typename_to_qualified_ident(
+    tn: &impl Typename,
+    suffix: &str,
+) -> TokenStream {
+    let typename = tn.typename();
+    let parts = typename.split("::").collect::<Vec<_>>();
+
+    let Some((typename, path)) = parts.split_last() else {
+        panic!("empty split!? from: {typename}");
+    };
+
+    let typ = format_ident!("{}{}", typename.to_case(Case::Pascal), suffix);
+
+    // We only care about the last module in the path. While a module path can
+    // be arbitrarily deep depending on RSF source organization, the actual
+    // module definitions are not nested, it's just a single flat module
+    // definition space defined by a collection of RSF files.
+    let Some(last) = path.last() else {
+        return quote! { #typ };
+    };
+
+    let last = format_ident!("{}", last.to_case(Case::Snake));
+
+    let _parts = path
+        .iter()
+        .map(|x| format_ident!("{}", x.to_case(Case::Snake)))
+        .collect::<Vec<_>>();
+
+    //quote! { #(#parts)::*::#typ }
+    quote! { #last::#typ }
 }
 
 #[cfg(test)]
