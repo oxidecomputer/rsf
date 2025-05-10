@@ -4,6 +4,7 @@ use crate::common::{FieldMode, NumberFormat, Typename};
 use crate::model::{Block, Component, FieldType, FieldUserType, Register};
 use crate::model::{ModelModules, Visitor};
 use anyhow::Result;
+use camino::Utf8Path;
 use convert_case::{Case, Casing};
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
@@ -52,6 +53,8 @@ impl Visitor for CodegenVisitor {
         let width = proc_macro2::Literal::u128_unsuffixed(reg.width.value);
         let mut fields = TokenStream::default();
         for f in &reg.fields {
+            let doc = f.doc.join("\n");
+
             let getter = format_ident!("get_{}", f.id.name);
             let setter = format_ident!("set_{}", f.id.name);
 
@@ -64,6 +67,7 @@ impl Visitor for CodegenVisitor {
                         || f.mode == FieldMode::ReadWrite
                     {
                         fields.extend(quote! {
+                            #[doc = #doc]
                             pub fn #getter(&self) -> bool {
                                 self.0.get_field::<#width, #offset>().unwrap().to_bool()
                             }
@@ -73,6 +77,7 @@ impl Visitor for CodegenVisitor {
                         || f.mode == FieldMode::ReadWrite
                     {
                         fields.extend(quote! {
+                            #[doc = #doc]
                             pub fn #setter(&mut self, data__: bool) {
                                 self.0.set_field::<#width, #offset>(BitSet::<#width>::from_bool(data__)).unwrap();
                             }
@@ -86,6 +91,7 @@ impl Visitor for CodegenVisitor {
                         || f.mode == FieldMode::ReadWrite
                     {
                         fields.extend(quote! {
+                            #[doc = #doc]
                             pub fn #getter(&self) -> BitSet<#width> {
                                 self.0.get_field::<#width, #offset>().unwrap()
                             }
@@ -95,6 +101,7 @@ impl Visitor for CodegenVisitor {
                         || f.mode == FieldMode::ReadWrite
                     {
                         fields.extend(quote! {
+                            #[doc = #doc]
                             pub fn #setter(&mut self, data__: BitSet<#width>) {
                                 self.0.set_field::<#width, #offset>(data__).unwrap();
                             }
@@ -131,6 +138,7 @@ impl Visitor for CodegenVisitor {
                         || f.mode == FieldMode::ReadWrite
                     {
                         fields.extend(quote! {
+                            #[doc = #doc]
                             pub fn #getter(&self) -> #typename {
                                 self.0.get_field::<#width, #offset>().unwrap().try_into().unwrap()
                             }
@@ -140,6 +148,7 @@ impl Visitor for CodegenVisitor {
                         || f.mode == FieldMode::ReadWrite
                     {
                         fields.extend(quote! {
+                            #[doc = #doc]
                             pub fn #setter(&mut self, data__: #typename) {
                                 self.0.set_field::<#width, #offset>(data__.into()).unwrap();
                             }
@@ -153,12 +162,20 @@ impl Visitor for CodegenVisitor {
         let instance_name =
             format_ident!("{}Instance", reg.id.name.to_case(Case::Pascal));
 
+        let doc = reg.doc.join("\n");
+        let instance_doc = format!("Instance of a [`{}`]", reg.id.name);
+
         self.register_definitions.extend(quote! {
+
             #[derive(Default, Debug)]
+            #[doc = #doc]
             pub struct #name(BitSet<#width>);
+
             impl #name {
                 #fields
             }
+
+            #[doc = #instance_doc]
             pub struct #instance_name {
                 addr: #addr_type,
             }
@@ -200,9 +217,11 @@ impl Visitor for CodegenVisitor {
             x if x < 128 => quote! { u128 },
             _ => panic!("enums cannot be more than 128 bits wide"),
         };
+        let doc = e.doc.join("\n");
 
         let mut alts = TokenStream::default();
         for a in &e.alternatives {
+            let doc = a.doc.join("\n");
             let alt_name = format_ident!("{}", a.id.name.to_case(Case::Pascal));
             let alt_value = match &a.value.format {
                 NumberFormat::Binary { digits } => {
@@ -225,6 +244,7 @@ impl Visitor for CodegenVisitor {
             }
             .unwrap();
             alts.extend(quote! {
+                #[doc = #doc]
                 #alt_name = #alt_value,
             });
         }
@@ -232,6 +252,7 @@ impl Visitor for CodegenVisitor {
         let width = proc_macro2::Literal::u128_unsuffixed(e.width.value);
 
         self.enum_definitions.extend(quote! {
+            #[doc = #doc]
             #[derive(num_enum::TryFromPrimitive, PartialEq, Debug)]
             #[repr(#repr)]
             pub enum #name {
@@ -266,13 +287,16 @@ impl Visitor for CodegenVisitor {
         self.current_block = name.to_owned();
 
         let addr_type = &self.addr_type;
+        let doc = block.doc.join("\n");
 
         self.block_definitions.extend(quote! {
+            #[doc = #doc]
             #[derive(Default, Debug)]
             pub struct #block_name{ addr: #addr_type }
         });
 
         for element in &block.elements {
+            let doc = element.doc.join("\n");
             let mut tokens = self
                 .block_methods
                 .get(&self.current_block)
@@ -294,6 +318,7 @@ impl Visitor for CodegenVisitor {
                         typ.typename().to_case(Case::Pascal)
                     );
                     tokens.extend(quote! {
+                        #[doc = #doc]
                         pub fn #method_name(&self) -> #type_name {
                             #type_name {
                                 addr: self.addr + #offset,
@@ -321,6 +346,7 @@ impl Visitor for CodegenVisitor {
                     ))
                     .unwrap();
                     tokens.extend(quote! {
+                        #[doc = #doc]
                         pub fn #method_name(&self, index: #addr_type) -> #type_name {
                             #type_name {
                                 addr: self.addr + #offset + (index * #spacing)
@@ -351,11 +377,47 @@ impl Visitor for CodegenVisitor {
     }
 }
 
+/// The address type to be used for register access in generated code.
+pub enum AddrType {
+    U8,
+    U16,
+    U32,
+    U64,
+    U128,
+}
+
+impl From<AddrType> for TokenStream {
+    fn from(value: AddrType) -> Self {
+        match value {
+            AddrType::U8 => quote! { u8 },
+            AddrType::U16 => quote! { u16 },
+            AddrType::U32 => quote! { u32 },
+            AddrType::U64 => quote! { u64 },
+            AddrType::U128 => quote! { u128 },
+        }
+    }
+}
+
+pub fn codegen(file: &Utf8Path, addr_type: AddrType) -> Result<String> {
+    codegen_internal(file, addr_type, false)
+}
+
+pub fn codegen_internal(
+    file: &Utf8Path,
+    addr_type: AddrType,
+    local_dev: bool,
+) -> Result<String> {
+    let ast = crate::parser::parse(file)?;
+    let resolved = ModelModules::resolve(&ast, String::default())?;
+    generate_rpi(&resolved, addr_type.into(), local_dev)
+}
+
 pub fn generate_rpi(
     model: &ModelModules,
     addr_type: TokenStream,
+    local_dev: bool,
 ) -> Result<String> {
-    let tokens = generate_rpi_rec(model, addr_type)?;
+    let tokens = generate_rpi_rec(model, addr_type, local_dev)?;
 
     let file: syn::File = syn::parse2(tokens)?;
     let code = prettyplease::unparse(&file);
@@ -365,17 +427,19 @@ pub fn generate_rpi(
 pub fn generate_rpi_rec(
     model: &ModelModules,
     addr_type: TokenStream,
+    local_dev: bool,
 ) -> Result<TokenStream> {
     let mut cgv = CodegenVisitor {
         addr_type: addr_type.clone(),
-        prelude: use_statements(),
+        prelude: use_statements(local_dev),
         ..Default::default()
     };
     model.root.accept(&mut cgv);
     let mut tokens = cgv.tokens();
 
     for (name, module) in &model.used {
-        let model_tokens = generate_rpi_rec(module, addr_type.clone())?;
+        let model_tokens =
+            generate_rpi_rec(module, addr_type.clone(), local_dev)?;
         let modname = format_ident!("{}", name.to_case(Case::Snake));
         tokens.extend(quote! {
             pub mod #modname {
@@ -387,34 +451,37 @@ pub fn generate_rpi_rec(
     Ok(tokens)
 }
 
-pub fn use_statements() -> TokenStream {
-    quote! {
+fn use_statements(local_dev: bool) -> TokenStream {
+    let mut tokens = quote! {
         use bitset::BitSet;
         use anyhow::Result;
+    };
+    if !local_dev {
+        tokens.extend(quote! {
+            use rsf::rust_rpi;
+        });
     }
+    tokens
 }
 
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::parser::parse;
     use expectorate::assert_contents;
 
     // Test code generation in terms of expected syntax.
     #[test]
     fn test_codegen() {
-        let ast = match parse("examples/nic.rsf".into()) {
-            Ok(ast) => ast,
+        let output = match codegen_internal(
+            "examples/nic.rsf".into(),
+            AddrType::U32,
+            true,
+        ) {
+            Ok(out) => out,
             Err(ref e) => {
-                panic!("parsing failed: {e}");
+                panic!("codegen failed: {e}");
             }
         };
-
-        let resolved =
-            ModelModules::resolve(&ast, String::from("")).expect("resolve ast");
-
-        let output =
-            generate_rpi(&resolved, quote! { u32 }).expect("generate nic rpi");
         assert_contents("test_data/nic_rpi.rs", &output);
     }
 

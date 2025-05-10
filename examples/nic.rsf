@@ -30,6 +30,8 @@ enum<2> Lanes {
 }
 
 /// Configuration for an Ethernet physical interface (phy).
+///
+/// All field modifications take effect immediately.
 register<32> PhyConfig {
     /// Data rate the phy is operating at.
     speed: rw ethernet::DataRate @ 0,
