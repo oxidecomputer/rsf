@@ -18,4 +18,4 @@ cargo clippy --all-targets -- --deny warnings
 
 banner "test"
 cargo install cargo-nextest
-cargo nextest run
+cargo nextest run --features test_generated

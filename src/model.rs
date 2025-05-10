@@ -1,7 +1,7 @@
 pub use crate::common::Enum;
 
 use crate::{
-    ast::{self, AstModules, Identifier},
+    ast::{self, AstModules, Identifier, Number},
     common::Typename,
 };
 use anyhow::{Result, anyhow};
@@ -19,6 +19,19 @@ pub type Component = crate::common::Component<QualifiedComponentType>;
 pub type FieldType = crate::common::FieldType<QualifiedFieldType>;
 pub type Register = crate::common::Register<FieldType>;
 pub type Field = crate::common::Field<FieldType>;
+
+impl FieldType {
+    pub fn width(&self) -> u128 {
+        match self {
+            Self::Bool => 1,
+            Self::Bitfield { width } => width.value,
+            Self::User { id } => {
+                let FieldUserType::Enum(e) = &id.typ;
+                e.width.value
+            }
+        }
+    }
+}
 
 #[derive(Debug, Clone)]
 pub enum ComponentUserType {
@@ -87,10 +100,111 @@ impl Display for ModelModules {
         write!(f, "{}", self.root)?;
 
         for submodule in self.used.values() {
-            write!(f, "{}", submodule)?;
+            write!(f, "{submodule}")?;
         }
 
         Ok(())
+    }
+}
+
+#[derive(Debug)]
+pub struct RegisterLookupResult {
+    pub definition: Arc<Register>,
+    pub address: u128,
+}
+
+#[derive(Debug)]
+pub struct RegisterLookup {
+    pub path: VecDeque<String>,
+    pub result: Option<RegisterLookupResult>,
+}
+
+impl From<&str> for RegisterLookup {
+    fn from(value: &str) -> Self {
+        let path = value.split("/");
+        Self {
+            path: path.into_iter().map(|x| x.to_owned()).collect(),
+            result: None,
+        }
+    }
+}
+
+impl Visitor for RegisterLookup {
+    fn block_component(
+        &mut self,
+        id: &Identifier,
+        _path: &[Identifier],
+        _block: Arc<Block>,
+        array_index: Option<u128>,
+        _addr: u128,
+    ) -> bool {
+        let Some(first) = self.path.front() else {
+            return false;
+        };
+
+        if &id.name == first {
+            if let Some(array_index) = array_index {
+                let Some(first) = self.path.get(1) else {
+                    return false;
+                };
+                if &array_index.to_string() == first {
+                    self.path.pop_front();
+                    self.path.pop_front();
+                    return true;
+                } else {
+                    return false;
+                }
+            }
+            self.path.pop_front();
+            true
+        } else {
+            false
+        }
+    }
+
+    fn register_component(
+        &mut self,
+        id: &Identifier,
+        _path: &[Identifier],
+        reg: Arc<Register>,
+        array_index: Option<u128>,
+        addr: u128,
+    ) {
+        if self.path.len() > 1 {
+            return;
+        }
+        let Some(first) = self.path.front() else {
+            return;
+        };
+        if &id.name == first {
+            if let Some(array_index) = array_index {
+                let Some(first) = self.path.get(1) else {
+                    return;
+                };
+                if &array_index.to_string() == first {
+                    self.path.pop_front();
+                    self.path.pop_front();
+                    return;
+                } else {
+                    return;
+                }
+            }
+            self.path.pop_front();
+            self.result = Some(RegisterLookupResult {
+                definition: reg.clone(),
+                address: addr,
+            })
+        }
+    }
+}
+
+impl Model {
+    /// Fetch the register at the provided path. The path is expected to
+    /// be in the form block_1/block_2/register for an arbitrary number
+    /// of blocks. Array type block components are indexed with square
+    /// brackets, e.g. block_1[5]/block_2/register.
+    pub fn get_register(&self, _path: &str) -> Result<Option<Arc<Register>>> {
+        todo!()
     }
 }
 
@@ -104,13 +218,13 @@ impl Display for Model {
         writeln!(f, "{}", name.magenta())?;
         writeln!(f, "{}", "=".repeat(name.len()).dimmed())?;
         for x in &self.enums {
-            writeln!(f, "{}", x)?;
+            writeln!(f, "{x}")?;
         }
         for x in &self.registers {
-            writeln!(f, "{}", x)?;
+            writeln!(f, "{x}")?;
         }
         for x in &self.blocks {
-            writeln!(f, "{}", x)?;
+            writeln!(f, "{x}")?;
         }
         Ok(())
     }
@@ -128,7 +242,7 @@ impl Display for Register {
             ">".dimmed(),
         )?;
         for x in &self.fields {
-            writeln!(f, "  {}", x)?;
+            writeln!(f, "  {x}")?;
         }
         Ok(())
     }
@@ -144,14 +258,12 @@ impl Display for Field {
             self.mode.to_string().blue(),
             self.typ,
         )?;
-        if let Some(offset) = &self.offset {
-            write!(
-                f,
-                " {} {}",
-                "@".dimmed(),
-                offset.value.to_string().yellow()
-            )?;
-        }
+        write!(
+            f,
+            " {} {}",
+            "@".dimmed(),
+            self.offset.value.to_string().yellow()
+        )?;
         Ok(())
     }
 }
@@ -168,7 +280,7 @@ impl Display for Enum {
             ">".dimmed(),
         )?;
         for x in &self.alternatives {
-            writeln!(f, "  {}", x)?;
+            writeln!(f, "  {x}")?;
         }
         Ok(())
     }
@@ -178,7 +290,7 @@ impl Display for Block {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         writeln!(f, "{} {}", "block".blue(), self.id.name.cyan())?;
         for x in &self.elements {
-            writeln!(f, "  {}", x)?;
+            writeln!(f, "  {x}")?;
         }
         Ok(())
     }
@@ -187,15 +299,12 @@ impl Display for Block {
 impl Display for BlockElement {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.component)?;
-        if let Some(offset) = &self.offset {
-            write!(
-                f,
-                " {} {}",
-                "@".dimmed(),
-                offset.value.to_string().yellow()
-            )?;
-        }
-        Ok(())
+        write!(
+            f,
+            " {} {}",
+            "@".dimmed(),
+            self.offset.value.to_string().yellow()
+        )
     }
 }
 
@@ -219,17 +328,13 @@ impl Display for Component {
                     "[".dimmed(),
                     length.value.to_string().yellow(),
                 )?;
-                if let Some(spacing) = &spacing {
-                    write!(
-                        f,
-                        "{} {}{}",
-                        ";".dimmed(),
-                        spacing.value.to_string().yellow(),
-                        "]".dimmed(),
-                    )?;
-                } else {
-                    write!(f, "{}", "]".dimmed())?;
-                }
+                write!(
+                    f,
+                    "{} {}{}",
+                    ";".dimmed(),
+                    spacing.value.to_string().yellow(),
+                    "]".dimmed(),
+                )?;
             }
         }
         Ok(())
@@ -250,14 +355,17 @@ impl Display for QualifiedComponentType {
 
 impl Typename for QualifiedComponentType {
     fn typename(&self) -> String {
-        let sep = "::".dimmed().to_string();
-        let path = self
-            .module_path
-            .iter()
-            .map(|model| model.id.as_str().magenta().to_string())
-            .collect::<Vec<_>>()
-            .join(sep.as_str());
-        format!("{}{}{}", path, sep, self.typ.typename().cyan())
+        let path = self.module_path.iter().filter(|x| !x.id.is_empty());
+        if self.module_path.len() == 1 {
+            format!("{}", self.typ.typename().cyan())
+        } else {
+            let sep = "::".dimmed().to_string();
+            let path = path
+                .map(|model| model.id.as_str().magenta().to_string())
+                .collect::<Vec<_>>()
+                .join(sep.as_str());
+            format!("{}{}{}", path, sep, self.typ.typename().cyan())
+        }
     }
 }
 
@@ -277,22 +385,25 @@ impl Display for QualifiedFieldType {
 // TODO exact same as QualifiedComponentType
 impl Typename for QualifiedFieldType {
     fn typename(&self) -> String {
-        let sep = "::".dimmed().to_string();
-        let path = self
-            .module_path
-            .iter()
-            .map(|model| model.id.as_str().magenta().to_string())
-            .collect::<Vec<_>>()
-            .join(sep.as_str());
-        format!("{}{}{}", path, sep, self.typ.typename().cyan())
+        let path = self.module_path.iter().filter(|x| !x.id.is_empty());
+        if self.module_path.len() == 1 {
+            format!("{}", self.typ.typename().cyan())
+        } else {
+            let sep = "::".dimmed().to_string();
+            let path = path
+                .map(|model| model.id.as_str().magenta().to_string())
+                .collect::<Vec<_>>()
+                .join(sep.as_str());
+            format!("{}{}{}", path, sep, self.typ.typename().cyan())
+        }
     }
 }
 
 impl Display for ComponentUserType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Register(x) => write!(f, "register {}", x),
-            Self::Block(x) => write!(f, "block {}", x),
+            Self::Register(x) => write!(f, "register {x}"),
+            Self::Block(x) => write!(f, "block {x}"),
         }
     }
 }
@@ -337,9 +448,55 @@ impl ModelModules {
                 fields,
             }));
         }
+
+        // Blocks can refrence each other in a module. This can cause
+        // problems if we try to resolve a block that has a reference
+        // to an unresolved block. The next bit of code sorts blocks
+        // according to reference count, so we resolve the most referenced
+        // blocks first. There are likely cases this does not address and
+        // we should really create a DAG, but this works for now.
+
+        #[derive(Debug)]
+        struct ReferencedBlock<'a> {
+            block: &'a crate::ast::Block,
+            refs: usize,
+        }
+
+        let mut blocks = m
+            .root
+            .blocks
+            .iter()
+            .map(|x| ReferencedBlock { block: x, refs: 0 })
+            .collect::<Vec<_>>();
+
         for b in &m.root.blocks {
-            let mut elements = Vec::default();
             for e in &b.elements {
+                let id = match &e.component {
+                    crate::ast::Component::Single { id: _, typ } => {
+                        typ.typename()
+                    }
+                    crate::ast::Component::Array {
+                        id: _,
+                        typ,
+                        length: _,
+                        spacing: _,
+                    } => typ.typename(),
+                };
+                let Some(target) =
+                    blocks.iter_mut().find(|x| x.block.id.name == id)
+                else {
+                    continue;
+                };
+
+                target.refs += 1;
+            }
+        }
+
+        blocks.sort_by(|x, y| y.refs.cmp(&x.refs));
+
+        for b in &blocks {
+            let mut elements = Vec::default();
+            for e in &b.block.elements {
                 elements.push(BlockElement {
                     doc: e.doc.clone(),
                     component: match &e.component {
@@ -365,11 +522,14 @@ impl ModelModules {
                 })
             }
             mm.root.blocks.push(Arc::new(Block {
-                doc: b.doc.clone(),
-                id: b.id.clone(),
+                doc: b.block.doc.clone(),
+                id: b.block.id.clone(),
                 elements,
             }));
         }
+
+        // TODO only intended for root and this is a recursive function
+        //mm.check()?;
 
         Ok(mm)
     }
@@ -383,7 +543,6 @@ impl ModelModules {
             ast::FieldType::Bitfield { width } => FieldType::Bitfield {
                 width: width.clone(),
             },
-            ast::FieldType::Ellipsis => FieldType::Ellipsis,
             ast::FieldType::User { id } => FieldType::User {
                 id: self.resolve_field_path(&id.path)?,
             },
@@ -492,6 +651,170 @@ impl ModelModules {
             }
         }
     }
+
+    #[allow(dead_code)]
+    fn check(&self) -> Result<()> {
+        self.check_main_block()?;
+        Ok(())
+    }
+
+    fn check_main_block(&self) -> Result<()> {
+        self.root
+            .blocks
+            .iter()
+            .find(|x| x.id.name == "Main")
+            .ok_or(anyhow!("main block not found"))?;
+        Ok(())
+    }
+}
+
+impl Model {
+    pub fn accept<V: Visitor>(&self, v: &mut V) {
+        for e in &self.enums {
+            v.enumeration(e.clone());
+        }
+        for r in &self.registers {
+            v.register(r.clone());
+        }
+        for b in &self.blocks {
+            v.block(b.clone(), 0);
+            if b.id.name == "Main" {
+                b.accept(v, 0, Vec::default());
+            }
+        }
+    }
+}
+
+impl Block {
+    pub fn accept<V: Visitor>(
+        &self,
+        v: &mut V,
+        addr: u128,
+        path: Vec<Identifier>,
+    ) {
+        for e in &self.elements {
+            let addr = addr + e.offset.value;
+            v.block_element(e, addr);
+            v.component(&e.component, addr);
+            e.component.accept(v, addr, path.clone());
+        }
+    }
+}
+
+impl Component {
+    pub fn accept<V: Visitor>(
+        &self,
+        v: &mut V,
+        addr: u128,
+        mut path: Vec<Identifier>,
+    ) {
+        match self {
+            Self::Single { id, typ } => {
+                v.single_component(id, typ, addr);
+                match &typ.typ {
+                    ComponentUserType::Register(r) => {
+                        v.register_component(id, &path, r.clone(), None, addr);
+                    }
+                    ComponentUserType::Block(b) => {
+                        if v.block_component(id, &path, b.clone(), None, addr) {
+                            path.push(id.clone());
+                            b.accept(v, addr, path);
+                        }
+                    }
+                }
+            }
+            Self::Array {
+                id,
+                typ,
+                length,
+                spacing,
+            } => {
+                for i in 0..length.value {
+                    let addr = addr + i * spacing.value;
+                    v.array_component(id, typ, length, spacing, addr);
+                    match &typ.typ {
+                        ComponentUserType::Register(r) => {
+                            v.register_component(
+                                id,
+                                &path,
+                                r.clone(),
+                                Some(i),
+                                addr,
+                            );
+                        }
+                        ComponentUserType::Block(b) => {
+                            let mut path = path.clone();
+                            path.push(id.clone());
+                            path.push(Identifier::new(&i.to_string()));
+                            if v.block_component(
+                                id,
+                                &path,
+                                b.clone(),
+                                Some(i),
+                                addr,
+                            ) {
+                                b.accept(v, addr, path);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+impl Register {
+    pub fn accept<V: Visitor>(&self, v: &mut V) {
+        for f in &self.fields {
+            v.field(f);
+        }
+    }
+}
+
+pub trait Visitor {
+    fn register(&mut self, _reg: Arc<Register>) {}
+    fn field(&mut self, _field: &Field) {}
+    fn block(&mut self, _block: Arc<Block>, _addr: u128) {}
+    fn enumeration(&mut self, _enum: Arc<Enum>) {}
+    fn block_element(&mut self, _element: &BlockElement, _addr: u128) {}
+    fn component(&mut self, _component: &Component, _addr: u128) {}
+    fn single_component(
+        &mut self,
+        _id: &Identifier,
+        _typ: &QualifiedComponentType,
+        _addr: u128,
+    ) {
+    }
+    fn array_component(
+        &mut self,
+        _id: &Identifier,
+        _typ: &QualifiedComponentType,
+        _length: &Number,
+        _spacing: &Number,
+        _addr: u128,
+    ) {
+    }
+    fn register_component(
+        &mut self,
+        _id: &Identifier,
+        _path: &[Identifier],
+        _reg: Arc<Register>,
+        _array_index: Option<u128>,
+        _addr: u128,
+    ) {
+    }
+    /// Visit a block component. Return value indicates whether to recurse
+    /// into the block.
+    fn block_component(
+        &mut self,
+        _id: &Identifier,
+        _path: &[Identifier],
+        _block: Arc<Block>,
+        _array_index: Option<u128>,
+        _addr: u128,
+    ) -> bool {
+        true
+    }
 }
 
 #[cfg(test)]
@@ -521,12 +844,6 @@ mod test {
         assert_eq!(e.id.name, typename);
     }
 
-    fn check_ellipsis_field(field: &Field, name: &str, mode: FieldMode) {
-        assert_eq!(name, field.id.name);
-        assert_eq!(mode, field.mode);
-        assert!(matches!(field.typ, FieldType::Ellipsis));
-    }
-
     fn check_bool_field(field: &Field, name: &str, mode: FieldMode) {
         assert_eq!(name, field.id.name);
         assert_eq!(mode, field.mode);
@@ -538,7 +855,7 @@ mod test {
         name: &str,
         type_path: &[&str],
         typename: &str,
-        offset: Option<u128>,
+        offset: u128,
     ) {
         let Component::Single { id, typ } = &block_element.component else {
             panic!("expected single component");
@@ -551,7 +868,7 @@ mod test {
             panic!("expected register component");
         };
         assert_eq!(typename, r.id.name);
-        assert_eq!(offset, block_element.offset.as_ref().map(|x| x.value))
+        assert_eq!(offset, block_element.offset.value)
     }
 
     fn check_block_block_array_component(
@@ -560,8 +877,8 @@ mod test {
         type_path: &[&str],
         typename: &str,
         count: u128,
-        stride: Option<u128>,
-        offset: Option<u128>,
+        stride: u128,
+        offset: u128,
     ) {
         let Component::Array {
             id,
@@ -580,9 +897,9 @@ mod test {
             panic!("expected block component");
         };
         assert_eq!(typename, b.id.name);
-        assert_eq!(offset, block_element.offset.as_ref().map(|x| x.value));
+        assert_eq!(offset, block_element.offset.value);
         assert_eq!(count, length.value);
-        assert_eq!(stride, spacing.as_ref().map(|x| x.value));
+        assert_eq!(stride, spacing.value);
     }
 
     #[test]
@@ -590,13 +907,12 @@ mod test {
         let ast = match parse("examples/nic.rsf".into()) {
             Ok(ast) => ast,
             Err(ref e) => {
-                panic!("parsing failed: {}", e);
+                panic!("parsing failed: {e}");
             }
         };
 
         let resolved =
             ModelModules::resolve(&ast, String::from("")).expect("resolve ast");
-        println!("{resolved}");
 
         // check PhyConfig
         assert_eq!(resolved.root.registers[0].id.name, "PhyConfig");
@@ -637,11 +953,6 @@ mod test {
             &["", "cei"],
             "Modulation",
         );
-        check_ellipsis_field(
-            &resolved.root.registers[0].fields[5],
-            "_",
-            FieldMode::Reserved,
-        );
 
         // check PhyStatus
         assert_eq!(resolved.root.registers[1].id.name, "PhyStatus");
@@ -661,11 +972,6 @@ mod test {
             "data_valid",
             FieldMode::ReadOnly,
         );
-        check_ellipsis_field(
-            &resolved.root.registers[1].fields[3],
-            "_",
-            FieldMode::Reserved,
-        );
 
         // check Phy
         assert_eq!(&resolved.root.blocks[0].id.name, "Phy");
@@ -674,26 +980,50 @@ mod test {
             "config",
             &[],
             "PhyConfig",
-            Some(0x200),
+            0x200,
         );
         check_register_block_single_component(
             &resolved.root.blocks[0].elements[1],
             "status",
             &[],
             "PhyStatus",
-            Some(0x400),
+            0x400,
         );
 
-        // check Nic
-        assert_eq!(&resolved.root.blocks[1].id.name, "Nic");
+        // check Main
+        assert_eq!(&resolved.root.blocks[1].id.name, "Main");
         check_block_block_array_component(
             &resolved.root.blocks[1].elements[0],
             "phys",
             &[],
             "Phy",
             4,
-            Some(0x1000),
-            Some(0x6000),
+            0x1000,
+            0x6000,
         );
+    }
+
+    #[test]
+    fn register_lookup_visitor() {
+        let ast = match parse("examples/nic.rsf".into()) {
+            Ok(ast) => ast,
+            Err(ref e) => {
+                panic!("parsing failed: {e}");
+            }
+        };
+
+        let resolved =
+            ModelModules::resolve(&ast, String::from("")).expect("resolve ast");
+
+        let mut lookup = RegisterLookup::from("phys/1/status");
+        resolved.root.accept(&mut lookup);
+
+        let Some(result) = &lookup.result else {
+            panic!("lookup for phys/1/status returned no result");
+        };
+
+        assert_eq!(result.address, 0x7400);
+
+        println!("{lookup:#?}");
     }
 }

@@ -45,7 +45,7 @@ impl Display for QualifiedType {
             .map(|id| id.name.as_str())
             .collect::<Vec<_>>()
             .join("::");
-        write!(f, "{}", path)
+        write!(f, "{path}")
     }
 }
 
@@ -75,7 +75,7 @@ pub trait Emit {
 impl Emit for Register {
     fn emit(&self, f: &mut impl Write) -> std::fmt::Result {
         for x in &self.doc {
-            writeln!(f, "///{}", x)?;
+            writeln!(f, "///{x}")?;
         }
         writeln!(f, "register<{}> {} {{", self.width.to_code(), self.id.name)?;
         for x in &self.fields {
@@ -89,7 +89,7 @@ impl Emit for Register {
 impl Emit for Field {
     fn emit(&self, f: &mut impl Write) -> std::fmt::Result {
         for x in &self.doc {
-            writeln!(f, "    ///{}", x)?;
+            writeln!(f, "    ///{x}")?;
         }
         write!(
             f,
@@ -98,11 +98,7 @@ impl Emit for Field {
             self.mode.to_code(),
             self.typ.to_code()
         )?;
-        if let Some(offset) = &self.offset {
-            writeln!(f, " @ {},", offset.to_code())
-        } else {
-            writeln!(f, ",")
-        }
+        writeln!(f, " @ {},", self.offset.to_code())
     }
 }
 
@@ -112,7 +108,6 @@ impl Emit for FieldType {
             Self::Bool => write!(f, "bool"),
             Self::Bitfield { width } => write!(f, "b{}", width.value),
             Self::User { id } => id.emit(f),
-            Self::Ellipsis => write!(f, "..."),
         }
     }
 }
@@ -125,14 +120,14 @@ impl Emit for QualifiedType {
             .map(|id| id.name.as_str())
             .collect::<Vec<_>>()
             .join("::");
-        write!(f, "{}", path)
+        write!(f, "{path}")
     }
 }
 
 impl Emit for Block {
     fn emit(&self, f: &mut impl Write) -> std::fmt::Result {
         for x in &self.doc {
-            writeln!(f, "///{}", x)?;
+            writeln!(f, "///{x}")?;
         }
         writeln!(f, "block {} {{", self.id.name)?;
         for x in &self.elements {
@@ -146,12 +141,10 @@ impl Emit for Block {
 impl Emit for BlockElement {
     fn emit(&self, f: &mut impl Write) -> std::fmt::Result {
         for x in &self.doc {
-            writeln!(f, "    ///{}", x)?;
+            writeln!(f, "    ///{x}")?;
         }
         self.component.emit(f)?;
-        if let Some(offset) = &self.offset {
-            write!(f, " @ {},", offset.to_code())?;
-        }
+        write!(f, " @ {},", self.offset.to_code())?;
         writeln!(f)
     }
 }
@@ -175,11 +168,7 @@ impl Emit for Component {
                     typ.to_code(),
                     length.to_code(),
                 )?;
-                if let Some(spacing) = &spacing {
-                    write!(f, "; {}]", spacing.to_code())?;
-                } else {
-                    write!(f, "]")?;
-                }
+                write!(f, "; {}]", spacing.to_code())?;
             }
         }
         Ok(())
@@ -193,6 +182,10 @@ impl Emit for Ast {
         }
         writeln!(f)?;
 
+        for x in &self.blocks {
+            x.emit(f)?;
+        }
+
         for x in &self.enums {
             x.emit(f)?;
         }
@@ -202,9 +195,6 @@ impl Emit for Ast {
             x.emit(f)?;
         }
 
-        for x in &self.blocks {
-            x.emit(f)?;
-        }
         Ok(())
     }
 }
@@ -226,7 +216,7 @@ mod test {
         let modules = match parse("examples/nic.rsf".into()) {
             Ok(ast) => ast,
             Err(ref e) => {
-                panic!("parsing failed: {}", e);
+                panic!("parsing failed: {e}");
             }
         };
 
