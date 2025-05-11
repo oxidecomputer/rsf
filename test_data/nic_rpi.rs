@@ -196,10 +196,13 @@ pub struct Client {
 }
 impl Client {
     /// A block for each of the four phys.
-    pub fn phys(&self, index: u32) -> PhyInstance {
-        PhyInstance {
-            addr: self.addr + 0x6000 + (index * 0x1000),
+    pub fn phys(&self, index: u32) -> Result<PhyInstance> {
+        if index > 4 {
+            return Err(anyhow::anyhow!("index out of bounds"));
         }
+        Ok(PhyInstance {
+            addr: self.addr + 0x6000 + (index * 0x1000),
+        })
     }
 }
 impl PhyInstance {

@@ -363,7 +363,7 @@ impl Visitor for CodegenVisitor {
                 Component::Array {
                     id,
                     typ,
-                    length: _,
+                    length,
                     spacing,
                 } => {
                     let method_name =
@@ -375,12 +375,17 @@ impl Visitor for CodegenVisitor {
                         spacing.value
                     ))
                     .unwrap();
+                    let length =
+                        proc_macro2::Literal::u128_unsuffixed(length.value);
                     tokens.extend(quote! {
                         #[doc = #doc]
-                        pub fn #method_name(&self, index: #addr_type) -> #type_name {
-                            #type_name {
-                                addr: self.addr + #offset + (index * #spacing)
+                        pub fn #method_name(&self, index: #addr_type) -> Result<#type_name> {
+                            if index > #length {
+                                return Err(anyhow::anyhow!("index out of bounds"));
                             }
+                            Ok(#type_name {
+                                addr: self.addr + #offset + (index * #spacing)
+                            })
                         }
                     });
                     self.block_methods
@@ -606,7 +611,7 @@ mod test {
     // Run a test program against generated code
     #[cfg(feature = "test_generated")]
     #[test]
-    fn run_generated_code() {
+    fn run_generated_code() -> Result<()> {
         use crate::rust_rpi::{DummyPlatform, RegisterInstance};
         use generated::*;
 
@@ -618,7 +623,7 @@ mod test {
         let rpi = Client::default();
 
         // Poke at some config
-        rpi.phys(1)
+        rpi.phys(1)?
             .config()
             .update(&platform, |c: &mut PhyConfig| {
                 c.set_speed(ethernet::DataRate::G50);
@@ -626,10 +631,12 @@ mod test {
             .unwrap();
 
         // Read some config, status
-        let config = rpi.phys(1).config().read(&platform).unwrap();
+        let config = rpi.phys(1)?.config().read(&platform).unwrap();
         assert_eq!(config.get_speed(), ethernet::DataRate::G50);
 
-        let status = rpi.phys(2).status().read(&platform).unwrap();
+        let status = rpi.phys(2)?.status().read(&platform).unwrap();
         assert!(!status.get_carrier());
+
+        Ok(())
     }
 }
