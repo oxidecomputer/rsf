@@ -46,29 +46,51 @@ impl PhyConfig {
     pub fn set_modulation(&mut self, data__: cei::Modulation) {
         self.0.set_field::<1, 24>(data__.into()).unwrap();
     }
+    pub fn reset(&mut self) {
+        self.0 = BitSet::<32>::ZERO;
+    }
+}
+impl From<u32> for PhyConfig {
+    fn from(value: u32) -> Self {
+        Self(BitSet::<32>::from_int(value).unwrap())
+    }
+}
+impl From<PhyConfig> for u32 {
+    fn from(value: PhyConfig) -> Self {
+        value.0.to_int()
+    }
 }
 ///Instance of a [`PhyConfig`]
 pub struct PhyConfigInstance {
     pub addr: u32,
 }
-impl rust_rpi::RegisterInstance<PhyConfig, u32> for PhyConfigInstance {
-    fn read(&self, platform: &impl rust_rpi::Platform<u32>) -> Result<PhyConfig> {
+impl rust_rpi::RegisterInstance<PhyConfig, u32, u32> for PhyConfigInstance {
+    fn read(&self, platform: &impl rust_rpi::Platform<u32, u32>) -> Result<PhyConfig> {
         platform.read(self.addr)
     }
     fn write(
         &self,
-        platform: &impl rust_rpi::Platform<u32>,
+        platform: &impl rust_rpi::Platform<u32, u32>,
         value: PhyConfig,
     ) -> Result<()> {
         platform.write(self.addr, value)
     }
-    fn update(
+    fn try_update<F: FnOnce(&mut PhyConfig) -> Result<()>>(
         &self,
-        platform: &impl rust_rpi::Platform<u32>,
-        f: fn(&mut PhyConfig) -> Result<()>,
+        platform: &impl rust_rpi::Platform<u32, u32>,
+        f: F,
     ) -> Result<()> {
         let mut value = self.read(platform)?;
         f(&mut value)?;
+        self.write(platform, value)
+    }
+    fn update<F: FnOnce(&mut PhyConfig)>(
+        &self,
+        platform: &impl rust_rpi::Platform<u32, u32>,
+        f: F,
+    ) -> Result<()> {
+        let mut value = self.read(platform)?;
+        f(&mut value);
         self.write(platform, value)
     }
 }
@@ -88,29 +110,51 @@ impl PhyStatus {
     pub fn get_data_valid(&self) -> bool {
         self.0.get_field::<1, 2>().unwrap().to_bool()
     }
+    pub fn reset(&mut self) {
+        self.0 = BitSet::<32>::ZERO;
+    }
+}
+impl From<u32> for PhyStatus {
+    fn from(value: u32) -> Self {
+        Self(BitSet::<32>::from_int(value).unwrap())
+    }
+}
+impl From<PhyStatus> for u32 {
+    fn from(value: PhyStatus) -> Self {
+        value.0.to_int()
+    }
 }
 ///Instance of a [`PhyStatus`]
 pub struct PhyStatusInstance {
     pub addr: u32,
 }
-impl rust_rpi::RegisterInstance<PhyStatus, u32> for PhyStatusInstance {
-    fn read(&self, platform: &impl rust_rpi::Platform<u32>) -> Result<PhyStatus> {
+impl rust_rpi::RegisterInstance<PhyStatus, u32, u32> for PhyStatusInstance {
+    fn read(&self, platform: &impl rust_rpi::Platform<u32, u32>) -> Result<PhyStatus> {
         platform.read(self.addr)
     }
     fn write(
         &self,
-        platform: &impl rust_rpi::Platform<u32>,
+        platform: &impl rust_rpi::Platform<u32, u32>,
         value: PhyStatus,
     ) -> Result<()> {
         platform.write(self.addr, value)
     }
-    fn update(
+    fn try_update<F: FnOnce(&mut PhyStatus) -> Result<()>>(
         &self,
-        platform: &impl rust_rpi::Platform<u32>,
-        f: fn(&mut PhyStatus) -> Result<()>,
+        platform: &impl rust_rpi::Platform<u32, u32>,
+        f: F,
     ) -> Result<()> {
         let mut value = self.read(platform)?;
         f(&mut value)?;
+        self.write(platform, value)
+    }
+    fn update<F: FnOnce(&mut PhyStatus)>(
+        &self,
+        platform: &impl rust_rpi::Platform<u32, u32>,
+        f: F,
+    ) -> Result<()> {
+        let mut value = self.read(platform)?;
+        f(&mut value);
         self.write(platform, value)
     }
 }

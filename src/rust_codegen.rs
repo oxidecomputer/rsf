@@ -17,6 +17,7 @@ use std::sync::Arc;
 #[derive(Default)]
 struct CodegenVisitor {
     addr_type: TokenStream,
+    value_type: TokenStream,
     prelude: TokenStream,
     register_definitions: TokenStream,
     enum_definitions: TokenStream,
@@ -160,6 +161,7 @@ impl Visitor for CodegenVisitor {
             }
         }
         let addr_type = &self.addr_type;
+        let value_type = &self.value_type;
 
         let instance_name =
             format_ident!("{}Instance", reg.id.name.to_case(Case::Pascal));
@@ -175,6 +177,24 @@ impl Visitor for CodegenVisitor {
 
             impl #name {
                 #fields
+                pub fn reset(&mut self) {
+                    self.0 = BitSet::<#width>::ZERO;
+                }
+            }
+
+            impl From<#value_type> for #name {
+                fn from(value: #value_type) -> Self {
+                    //TODO should be fallible
+                    Self(BitSet::<#width>::from_int(value).unwrap())
+                }
+            }
+
+            impl From<#name> for #value_type {
+                fn from(value: #name) -> Self {
+                    //TODO it's not obvious without looking here that value_type
+                    // should be an integer of some kind
+                    value.0.to_int()
+                }
             }
 
             #[doc = #instance_doc]
@@ -182,30 +202,40 @@ impl Visitor for CodegenVisitor {
                 pub addr: #addr_type,
             }
 
-            impl rust_rpi::RegisterInstance<#name, #addr_type> for #instance_name {
+            impl rust_rpi::RegisterInstance<#name, #addr_type, #value_type> for #instance_name {
                 fn read(
                     &self,
-                    platform: &impl rust_rpi::Platform<#addr_type>,
+                    platform: &impl rust_rpi::Platform<#addr_type, #value_type>,
                 ) -> Result<#name> {
                     platform.read(self.addr)
                 }
                 fn write(
                     &self,
-                    platform: &impl rust_rpi::Platform<#addr_type>,
+                    platform: &impl rust_rpi::Platform<#addr_type, #value_type>,
                     value: #name,
                 ) -> Result<()> {
                     platform.write(self.addr, value)
                 }
-                fn update(
+                fn try_update<F: FnOnce(&mut #name) -> Result<()>>(
                     &self,
-                    platform: &impl rust_rpi::Platform<#addr_type>,
-                    f: fn(&mut #name) -> Result<()>
+                    platform: &impl rust_rpi::Platform<#addr_type, #value_type>,
+                    f: F,
                 ) -> Result<()> {
                     let mut value = self.read(platform)?;
                     f(&mut value)?;
                     self.write(platform, value)
                 }
+                fn update<F: FnOnce(&mut #name)>(
+                    &self,
+                    platform: &impl rust_rpi::Platform<#addr_type, #value_type>,
+                    f: F,
+                ) -> Result<()> {
+                    let mut value = self.read(platform)?;
+                    f(&mut value);
+                    self.write(platform, value)
+                }
             }
+
         })
     }
 
@@ -398,26 +428,53 @@ impl From<AddrType> for TokenStream {
     }
 }
 
-pub fn codegen(file: &Utf8Path, addr_type: AddrType) -> Result<String> {
-    codegen_internal(file, addr_type, false)
+/// The value type to be used for register access in generated code.
+pub enum ValueType {
+    U8,
+    U16,
+    U32,
+    U64,
+    U128,
+}
+
+impl From<ValueType> for TokenStream {
+    fn from(value: ValueType) -> Self {
+        match value {
+            ValueType::U8 => quote! { u8 },
+            ValueType::U16 => quote! { u16 },
+            ValueType::U32 => quote! { u32 },
+            ValueType::U64 => quote! { u64 },
+            ValueType::U128 => quote! { u128 },
+        }
+    }
+}
+
+pub fn codegen(
+    file: &Utf8Path,
+    addr_type: AddrType,
+    value_type: ValueType,
+) -> Result<String> {
+    codegen_internal(file, addr_type, value_type, false)
 }
 
 pub fn codegen_internal(
     file: &Utf8Path,
     addr_type: AddrType,
+    value_type: ValueType,
     local_dev: bool,
 ) -> Result<String> {
     let ast = crate::parser::parse(file)?;
     let resolved = ModelModules::resolve(&ast, String::default())?;
-    generate_rpi(&resolved, addr_type.into(), local_dev)
+    generate_rpi(&resolved, addr_type.into(), value_type.into(), local_dev)
 }
 
 pub fn generate_rpi(
     model: &ModelModules,
     addr_type: TokenStream,
+    value_type: TokenStream,
     local_dev: bool,
 ) -> Result<String> {
-    let tokens = generate_rpi_rec(model, addr_type, local_dev)?;
+    let tokens = generate_rpi_rec(model, addr_type, value_type, local_dev)?;
 
     let file: syn::File = syn::parse2(tokens.clone()).map_err(|e| {
         let generated = tokens
@@ -442,10 +499,12 @@ pub fn generate_rpi(
 pub fn generate_rpi_rec(
     model: &ModelModules,
     addr_type: TokenStream,
+    value_type: TokenStream,
     local_dev: bool,
 ) -> Result<TokenStream> {
     let mut cgv = CodegenVisitor {
         addr_type: addr_type.clone(),
+        value_type: value_type.clone(),
         prelude: use_statements(local_dev),
         ..Default::default()
     };
@@ -453,8 +512,12 @@ pub fn generate_rpi_rec(
     let mut tokens = cgv.tokens();
 
     for (name, module) in &model.used {
-        let model_tokens =
-            generate_rpi_rec(module, addr_type.clone(), local_dev)?;
+        let model_tokens = generate_rpi_rec(
+            module,
+            addr_type.clone(),
+            value_type.clone(),
+            local_dev,
+        )?;
         let modname = format_ident!("{}", name.to_case(Case::Snake));
         tokens.extend(quote! {
             pub mod #modname {
@@ -507,7 +570,6 @@ fn typename_to_qualified_ident(
         .map(|x| format_ident!("{}", x.to_case(Case::Snake)))
         .collect::<Vec<_>>();
 
-    //quote! { #(#parts)::*::#typ }
     quote! { #last::#typ }
 }
 
@@ -522,6 +584,7 @@ mod test {
         let output = match codegen_internal(
             "examples/nic.rsf".into(),
             AddrType::U32,
+            ValueType::U32,
             true,
         ) {
             Ok(out) => out,
@@ -559,7 +622,6 @@ mod test {
             .config()
             .update(&platform, |c: &mut PhyConfig| {
                 c.set_speed(ethernet::DataRate::G50);
-                Ok(())
             })
             .unwrap();
 
