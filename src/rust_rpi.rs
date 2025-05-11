@@ -1,21 +1,26 @@
 //! Rust register programming interface (RPI)
 
-use anyhow::Result;
+pub use crate::error::OutOfRange;
 
 /// The `Platform` trait encapsulates the mechanics of how to read and write
 /// registers. For example, this trait might be implemented using an ioctl
 /// interface in conjunction with an operating system driver, directly
 /// manipulate memory mapped register memory, send messages over a UART, etc.
 pub trait Platform<AddrType, ValueType> {
+    type Error;
+
     /// Read a register of type `T` at the given address.
-    fn read<T: Default + From<ValueType>>(&self, addr: AddrType) -> Result<T>;
+    fn read<T: Default + From<ValueType>>(
+        &self,
+        addr: AddrType,
+    ) -> Result<T, Self::Error>;
 
     /// Write a register of type `T` to the given address.
     fn write<T: Default + Into<ValueType>>(
         &self,
         addr: AddrType,
         value: T,
-    ) -> Result<()>;
+    ) -> Result<(), Self::Error>;
 }
 
 /// The `RegisterInstance` trait captures basic read/write/update operations
@@ -28,51 +33,65 @@ pub trait Platform<AddrType, ValueType> {
 /// compiler.
 pub trait RegisterInstance<T, AddrType, ValueType> {
     /// Read this the value of this register instance.
-    fn read(&self, platform: &impl Platform<AddrType, ValueType>) -> Result<T>;
+    fn read<P: Platform<AddrType, ValueType>>(
+        &self,
+        platform: &P,
+    ) -> Result<T, P::Error>;
 
     /// Write a value to this register instance.
-    fn write(
+    fn write<P: Platform<AddrType, ValueType>>(
         &self,
-        platform: &impl Platform<AddrType, ValueType>,
+        platform: &P,
         value: T,
-    ) -> Result<()>;
+    ) -> Result<(), P::Error>;
 
     /// Attempt a fallible update of this register instance. This is a composite
     /// read/write operation with a user-defined update function passed in to
     /// perform the update on the register fields.
-    fn try_update<F: FnOnce(&mut T) -> Result<()>>(
+    fn try_update<
+        P: Platform<AddrType, ValueType>,
+        F: FnOnce(&mut T) -> Result<(), P::Error>,
+    >(
         &self,
-        platform: &impl Platform<AddrType, ValueType>,
+        platform: &P,
         f: F,
-    ) -> Result<()>;
+    ) -> Result<(), P::Error>;
 
     /// Perform an update of this register instance. This is a composite
     /// read/write operation with a user-defined update function passed in to
     /// perform the update on the register fields.
-    fn update<F: FnOnce(&mut T)>(
+    fn update<P: Platform<AddrType, ValueType>, F: FnOnce(&mut T)>(
         &self,
-        platform: &impl Platform<AddrType, ValueType>,
+        platform: &P,
         f: F,
-    ) -> Result<()>;
+    ) -> Result<(), P::Error>;
 }
 
+#[derive(Debug, thiserror::Error)]
+pub enum DummyPlatformError {}
+
 /// A dummy platform used only for testing.
-#[cfg(test)]
-#[cfg(feature = "test_generated")]
 #[derive(Default)]
-pub(crate) struct DummyPlatform<AddrType> {
+pub struct DummyPlatform<AddrType> {
     phantom_data: std::marker::PhantomData<AddrType>,
 }
 
-#[cfg(test)]
-#[cfg(feature = "test_generated")]
 impl<AddrType, ValueType> Platform<AddrType, ValueType>
     for DummyPlatform<AddrType>
 {
-    fn read<T: Default>(&self, _addr: AddrType) -> Result<T> {
+    type Error = DummyPlatformError;
+
+    fn read<T: Default>(
+        &self,
+        _addr: AddrType,
+    ) -> Result<T, DummyPlatformError> {
         Ok(T::default())
     }
-    fn write<T: Default>(&self, _addr: AddrType, _value: T) -> Result<()> {
+    fn write<T: Default>(
+        &self,
+        _addr: AddrType,
+        _value: T,
+    ) -> Result<(), DummyPlatformError> {
         Ok(())
     }
 }

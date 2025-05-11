@@ -1,5 +1,5 @@
 use bitset::BitSet;
-use anyhow::Result;
+use rsf::rust_rpi;
 #[derive(Default, Debug)]
 /** Configuration for an Ethernet physical interface (phy).
 
@@ -65,30 +65,32 @@ pub struct PhyConfigInstance {
     pub addr: u32,
 }
 impl rust_rpi::RegisterInstance<PhyConfig, u32, u32> for PhyConfigInstance {
-    fn read(&self, platform: &impl rust_rpi::Platform<u32, u32>) -> Result<PhyConfig> {
+    fn read<P: rust_rpi::Platform<u32, u32>>(
+        &self,
+        platform: &P,
+    ) -> Result<PhyConfig, P::Error> {
         platform.read(self.addr)
     }
-    fn write(
+    fn write<P: rust_rpi::Platform<u32, u32>>(
         &self,
-        platform: &impl rust_rpi::Platform<u32, u32>,
+        platform: &P,
         value: PhyConfig,
-    ) -> Result<()> {
+    ) -> Result<(), P::Error> {
         platform.write(self.addr, value)
     }
-    fn try_update<F: FnOnce(&mut PhyConfig) -> Result<()>>(
-        &self,
-        platform: &impl rust_rpi::Platform<u32, u32>,
-        f: F,
-    ) -> Result<()> {
+    fn try_update<
+        P: rust_rpi::Platform<u32, u32>,
+        F: FnOnce(&mut PhyConfig) -> Result<(), P::Error>,
+    >(&self, platform: &P, f: F) -> Result<(), P::Error> {
         let mut value = self.read(platform)?;
         f(&mut value)?;
         self.write(platform, value)
     }
-    fn update<F: FnOnce(&mut PhyConfig)>(
+    fn update<P: rust_rpi::Platform<u32, u32>, F: FnOnce(&mut PhyConfig)>(
         &self,
-        platform: &impl rust_rpi::Platform<u32, u32>,
+        platform: &P,
         f: F,
-    ) -> Result<()> {
+    ) -> Result<(), P::Error> {
         let mut value = self.read(platform)?;
         f(&mut value);
         self.write(platform, value)
@@ -129,30 +131,32 @@ pub struct PhyStatusInstance {
     pub addr: u32,
 }
 impl rust_rpi::RegisterInstance<PhyStatus, u32, u32> for PhyStatusInstance {
-    fn read(&self, platform: &impl rust_rpi::Platform<u32, u32>) -> Result<PhyStatus> {
+    fn read<P: rust_rpi::Platform<u32, u32>>(
+        &self,
+        platform: &P,
+    ) -> Result<PhyStatus, P::Error> {
         platform.read(self.addr)
     }
-    fn write(
+    fn write<P: rust_rpi::Platform<u32, u32>>(
         &self,
-        platform: &impl rust_rpi::Platform<u32, u32>,
+        platform: &P,
         value: PhyStatus,
-    ) -> Result<()> {
+    ) -> Result<(), P::Error> {
         platform.write(self.addr, value)
     }
-    fn try_update<F: FnOnce(&mut PhyStatus) -> Result<()>>(
-        &self,
-        platform: &impl rust_rpi::Platform<u32, u32>,
-        f: F,
-    ) -> Result<()> {
+    fn try_update<
+        P: rust_rpi::Platform<u32, u32>,
+        F: FnOnce(&mut PhyStatus) -> Result<(), P::Error>,
+    >(&self, platform: &P, f: F) -> Result<(), P::Error> {
         let mut value = self.read(platform)?;
         f(&mut value)?;
         self.write(platform, value)
     }
-    fn update<F: FnOnce(&mut PhyStatus)>(
+    fn update<P: rust_rpi::Platform<u32, u32>, F: FnOnce(&mut PhyStatus)>(
         &self,
-        platform: &impl rust_rpi::Platform<u32, u32>,
+        platform: &P,
         f: F,
-    ) -> Result<()> {
+    ) -> Result<(), P::Error> {
         let mut value = self.read(platform)?;
         f(&mut value);
         self.write(platform, value)
@@ -179,9 +183,10 @@ impl From<Lanes> for BitSet<2> {
     }
 }
 impl TryFrom<BitSet<2>> for Lanes {
-    type Error = anyhow::Error;
-    fn try_from(value: BitSet<2>) -> Result<Self> {
-        Ok(Self::try_from(value.to_int())?)
+    type Error = rust_rpi::OutOfRange;
+    fn try_from(value: BitSet<2>) -> Result<Self, Self::Error> {
+        Self::try_from(value.to_int())
+            .map_err(|_| rust_rpi::OutOfRange::EnumValueOutOfRange)
     }
 }
 /// Phy registers.
@@ -196,9 +201,9 @@ pub struct Client {
 }
 impl Client {
     /// A block for each of the four phys.
-    pub fn phys(&self, index: u32) -> Result<PhyInstance> {
+    pub fn phys(&self, index: u32) -> Result<PhyInstance, rust_rpi::OutOfRange> {
         if index > 4 {
-            return Err(anyhow::anyhow!("index out of bounds"));
+            return Err(rust_rpi::OutOfRange::IndexOutOfRange);
         }
         Ok(PhyInstance {
             addr: self.addr + 0x6000 + (index * 0x1000),
@@ -221,7 +226,7 @@ impl PhyInstance {
 }
 pub mod cei {
     use bitset::BitSet;
-    use anyhow::Result;
+    use rsf::rust_rpi;
     /// Supported signal modulation types.
     #[derive(num_enum::TryFromPrimitive, PartialEq, Debug)]
     #[repr(u8)]
@@ -237,15 +242,16 @@ pub mod cei {
         }
     }
     impl TryFrom<BitSet<1>> for Modulation {
-        type Error = anyhow::Error;
-        fn try_from(value: BitSet<1>) -> Result<Self> {
-            Ok(Self::try_from(value.to_int())?)
+        type Error = rust_rpi::OutOfRange;
+        fn try_from(value: BitSet<1>) -> Result<Self, Self::Error> {
+            Self::try_from(value.to_int())
+                .map_err(|_| rust_rpi::OutOfRange::EnumValueOutOfRange)
         }
     }
 }
 pub mod ethernet {
     use bitset::BitSet;
-    use anyhow::Result;
+    use rsf::rust_rpi;
     /// Reach of a signal.
     #[derive(num_enum::TryFromPrimitive, PartialEq, Debug)]
     #[repr(u8)]
@@ -271,9 +277,10 @@ pub mod ethernet {
         }
     }
     impl TryFrom<BitSet<3>> for Reach {
-        type Error = anyhow::Error;
-        fn try_from(value: BitSet<3>) -> Result<Self> {
-            Ok(Self::try_from(value.to_int())?)
+        type Error = rust_rpi::OutOfRange;
+        fn try_from(value: BitSet<3>) -> Result<Self, Self::Error> {
+            Self::try_from(value.to_int())
+                .map_err(|_| rust_rpi::OutOfRange::EnumValueOutOfRange)
         }
     }
     /// Forward error correction mode.
@@ -293,9 +300,10 @@ pub mod ethernet {
         }
     }
     impl TryFrom<BitSet<2>> for Fec {
-        type Error = anyhow::Error;
-        fn try_from(value: BitSet<2>) -> Result<Self> {
-            Ok(Self::try_from(value.to_int())?)
+        type Error = rust_rpi::OutOfRange;
+        fn try_from(value: BitSet<2>) -> Result<Self, Self::Error> {
+            Self::try_from(value.to_int())
+                .map_err(|_| rust_rpi::OutOfRange::EnumValueOutOfRange)
         }
     }
     /// Data rate specification.
@@ -317,9 +325,10 @@ pub mod ethernet {
         }
     }
     impl TryFrom<BitSet<2>> for DataRate {
-        type Error = anyhow::Error;
-        fn try_from(value: BitSet<2>) -> Result<Self> {
-            Ok(Self::try_from(value.to_int())?)
+        type Error = rust_rpi::OutOfRange;
+        fn try_from(value: BitSet<2>) -> Result<Self, Self::Error> {
+            Self::try_from(value.to_int())
+                .map_err(|_| rust_rpi::OutOfRange::EnumValueOutOfRange)
         }
     }
 }

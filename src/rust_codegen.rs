@@ -203,33 +203,46 @@ impl Visitor for CodegenVisitor {
             }
 
             impl rust_rpi::RegisterInstance<#name, #addr_type, #value_type> for #instance_name {
-                fn read(
+                fn read<
+                    P: rust_rpi::Platform<#addr_type, #value_type>,
+                >(
                     &self,
-                    platform: &impl rust_rpi::Platform<#addr_type, #value_type>,
-                ) -> Result<#name> {
+                    platform: &P,
+                ) -> Result<#name, P::Error> {
                     platform.read(self.addr)
                 }
-                fn write(
+
+                fn write<
+                    P: rust_rpi::Platform<#addr_type, #value_type>,
+                >(
                     &self,
-                    platform: &impl rust_rpi::Platform<#addr_type, #value_type>,
+                    platform: &P,
                     value: #name,
-                ) -> Result<()> {
+                ) -> Result<(), P::Error> {
                     platform.write(self.addr, value)
                 }
-                fn try_update<F: FnOnce(&mut #name) -> Result<()>>(
+
+                fn try_update<
+                    P: rust_rpi::Platform<#addr_type, #value_type>,
+                    F: FnOnce(&mut #name) -> Result<(), P::Error>
+                >(
                     &self,
-                    platform: &impl rust_rpi::Platform<#addr_type, #value_type>,
+                    platform: &P,
                     f: F,
-                ) -> Result<()> {
+                ) -> Result<(), P::Error> {
                     let mut value = self.read(platform)?;
                     f(&mut value)?;
                     self.write(platform, value)
                 }
-                fn update<F: FnOnce(&mut #name)>(
+
+                fn update<
+                    P: rust_rpi::Platform<#addr_type, #value_type>,
+                    F: FnOnce(&mut #name)
+                >(
                     &self,
-                    platform: &impl rust_rpi::Platform<#addr_type, #value_type>,
+                    platform: &P,
                     f: F,
-                ) -> Result<()> {
+                ) -> Result<(), P::Error> {
                     let mut value = self.read(platform)?;
                     f(&mut value);
                     self.write(platform, value)
@@ -298,10 +311,15 @@ impl Visitor for CodegenVisitor {
             }
 
             impl TryFrom<BitSet<#width>> for #name {
-                type Error = anyhow::Error;
+                type Error = rust_rpi::OutOfRange;
 
-                fn try_from(value: BitSet<#width>) -> Result<Self> {
-                    Ok(Self::try_from(value.to_int())?)
+                fn try_from(value: BitSet<#width>)
+                    -> Result<Self, Self::Error> {
+                    Self::try_from(value.to_int())
+                        .map_err(|_|
+                            rust_rpi::OutOfRange::EnumValueOutOfRange
+                        )
+
                 }
             }
         });
@@ -379,9 +397,10 @@ impl Visitor for CodegenVisitor {
                         proc_macro2::Literal::u128_unsuffixed(length.value);
                     tokens.extend(quote! {
                         #[doc = #doc]
-                        pub fn #method_name(&self, index: #addr_type) -> Result<#type_name> {
+                        pub fn #method_name(&self, index: #addr_type)
+                            -> Result<#type_name, rust_rpi::OutOfRange> {
                             if index > #length {
-                                return Err(anyhow::anyhow!("index out of bounds"));
+                                return Err(rust_rpi::OutOfRange::IndexOutOfRange);
                             }
                             Ok(#type_name {
                                 addr: self.addr + #offset + (index * #spacing)
@@ -459,27 +478,17 @@ pub fn codegen(
     addr_type: AddrType,
     value_type: ValueType,
 ) -> Result<String> {
-    codegen_internal(file, addr_type, value_type, false)
-}
-
-pub fn codegen_internal(
-    file: &Utf8Path,
-    addr_type: AddrType,
-    value_type: ValueType,
-    local_dev: bool,
-) -> Result<String> {
     let ast = crate::parser::parse(file)?;
     let resolved = ModelModules::resolve(&ast, String::default())?;
-    generate_rpi(&resolved, addr_type.into(), value_type.into(), local_dev)
+    generate_rpi(&resolved, addr_type.into(), value_type.into())
 }
 
 pub fn generate_rpi(
     model: &ModelModules,
     addr_type: TokenStream,
     value_type: TokenStream,
-    local_dev: bool,
 ) -> Result<String> {
-    let tokens = generate_rpi_rec(model, addr_type, value_type, local_dev)?;
+    let tokens = generate_rpi_rec(model, addr_type, value_type)?;
 
     let file: syn::File = syn::parse2(tokens.clone()).map_err(|e| {
         let generated = tokens
@@ -505,24 +514,19 @@ pub fn generate_rpi_rec(
     model: &ModelModules,
     addr_type: TokenStream,
     value_type: TokenStream,
-    local_dev: bool,
 ) -> Result<TokenStream> {
     let mut cgv = CodegenVisitor {
         addr_type: addr_type.clone(),
         value_type: value_type.clone(),
-        prelude: use_statements(local_dev),
+        prelude: use_statements(),
         ..Default::default()
     };
     model.root.accept(&mut cgv);
     let mut tokens = cgv.tokens();
 
     for (name, module) in &model.used {
-        let model_tokens = generate_rpi_rec(
-            module,
-            addr_type.clone(),
-            value_type.clone(),
-            local_dev,
-        )?;
+        let model_tokens =
+            generate_rpi_rec(module, addr_type.clone(), value_type.clone())?;
         let modname = format_ident!("{}", name.to_case(Case::Snake));
         tokens.extend(quote! {
             pub mod #modname {
@@ -534,16 +538,11 @@ pub fn generate_rpi_rec(
     Ok(tokens)
 }
 
-fn use_statements(local_dev: bool) -> TokenStream {
-    let mut tokens = quote! {
+fn use_statements() -> TokenStream {
+    let tokens = quote! {
         use bitset::BitSet;
-        use anyhow::Result;
+        use rsf::rust_rpi;
     };
-    if !local_dev {
-        tokens.extend(quote! {
-            use rsf::rust_rpi;
-        });
-    }
     tokens
 }
 
@@ -576,67 +575,4 @@ fn typename_to_qualified_ident(
         .collect::<Vec<_>>();
 
     quote! { #last::#typ }
-}
-
-#[cfg(test)]
-mod test {
-    use super::*;
-    use expectorate::assert_contents;
-
-    // Test code generation in terms of expected syntax.
-    #[test]
-    fn test_codegen() {
-        let output = match codegen_internal(
-            "examples/nic.rsf".into(),
-            AddrType::U32,
-            ValueType::U32,
-            true,
-        ) {
-            Ok(out) => out,
-            Err(ref e) => {
-                panic!("codegen failed: {e}");
-            }
-        };
-        assert_contents("test_data/nic_rpi.rs", &output);
-    }
-
-    // Kersplat generated code right here!
-    #[allow(dead_code)]
-    #[cfg(feature = "test_generated")]
-    mod generated {
-        use crate::rust_rpi;
-        include!("../test_data/nic_rpi.rs");
-    }
-
-    // Run a test program against generated code
-    #[cfg(feature = "test_generated")]
-    #[test]
-    fn run_generated_code() -> Result<()> {
-        use crate::rust_rpi::{DummyPlatform, RegisterInstance};
-        use generated::*;
-
-        // Initialize the underlying platform. For testing this is just a
-        // dummy platform.
-        let platform = DummyPlatform::default();
-
-        // Create the RPI client
-        let rpi = Client::default();
-
-        // Poke at some config
-        rpi.phys(1)?
-            .config()
-            .update(&platform, |c: &mut PhyConfig| {
-                c.set_speed(ethernet::DataRate::G50);
-            })
-            .unwrap();
-
-        // Read some config, status
-        let config = rpi.phys(1)?.config().read(&platform).unwrap();
-        assert_eq!(config.get_speed(), ethernet::DataRate::G50);
-
-        let status = rpi.phys(2)?.status().read(&platform).unwrap();
-        assert!(!status.get_carrier());
-
-        Ok(())
-    }
 }

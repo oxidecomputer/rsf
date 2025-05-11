@@ -3,6 +3,7 @@
 
 pub mod ast;
 pub mod common;
+pub mod error;
 pub mod model;
 pub mod parser;
 pub mod rust_codegen;

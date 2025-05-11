@@ -18,6 +18,7 @@ expectorate = "1.1"
 convert_case = "0.8.0"
 bitset = { git = "https://github.com/oxidecomputer/bitset" }
 bitset-macro = { git = "https://github.com/oxidecomputer/bitset" }
+thiserror = "2.0.12"
 
 [dev-dependencies]
 expectorate = "1.1.0"
