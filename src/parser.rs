@@ -193,7 +193,7 @@ pub fn parse_field(input: &mut Input) -> ModalResult<Field> {
     token(":").parse_next(input)?;
     let mode = parse_field_mode.parse_next(input)?;
     let typ = parse_field_type.parse_next(input)?;
-    let offset = component_offset_parser.parse_next(input).ok();
+    let offset = component_offset_parser.parse_next(input)?;
     Ok(Field {
         doc,
         id,
@@ -204,13 +204,8 @@ pub fn parse_field(input: &mut Input) -> ModalResult<Field> {
 }
 
 pub fn parse_field_type(input: &mut Input) -> ModalResult<FieldType> {
-    alt((
-        parse_elipsis_type,
-        parse_bitfield_type,
-        parse_bool_type,
-        parse_component_type,
-    ))
-    .parse_next(input)
+    alt((parse_bitfield_type, parse_bool_type, parse_component_type))
+        .parse_next(input)
 }
 
 pub fn parse_bool_type(input: &mut Input) -> ModalResult<FieldType> {
@@ -228,11 +223,6 @@ pub fn parse_component_type(input: &mut Input) -> ModalResult<FieldType> {
     Ok(FieldType::User {
         id: token(parse_qualified_type).parse_next(input)?,
     })
-}
-
-pub fn parse_elipsis_type(input: &mut Input) -> ModalResult<FieldType> {
-    token("...").parse_next(input)?;
-    Ok(FieldType::Ellipsis)
 }
 
 pub fn parse_bool_type_impl(input: &mut Input) -> ModalResult<()> {
@@ -315,7 +305,7 @@ pub fn parse_block_cut(input: &mut Input) -> ModalResult<Block> {
 pub fn block_element_parser(input: &mut Input) -> ModalResult<BlockElement> {
     let doc = doc_comment_parser.parse_next(input)?;
     let component = component_parser.parse_next(input)?;
-    let offset = component_offset_parser.parse_next(input).ok();
+    let offset = component_offset_parser.parse_next(input)?;
     Ok(BlockElement {
         doc,
         component,
@@ -340,14 +330,11 @@ pub fn component_parser(input: &mut Input) -> ModalResult<Component> {
 
 pub fn component_array_parser(
     input: &mut Input,
-) -> ModalResult<(Number, Option<Number>)> {
+) -> ModalResult<(Number, Number)> {
     token("[").parse_next(input)?;
     let length = number_parser.parse_next(input)?;
-    let spacing = if token(";").parse_next(input).is_ok() {
-        Some(number_parser.parse_next(input)?)
-    } else {
-        None
-    };
+    token(";").parse_next(input)?;
+    let spacing = number_parser.parse_next(input)?;
     token("]").parse_next(input)?;
     Ok((length, spacing))
 }
@@ -487,7 +474,7 @@ mod test {
         let ast = match parse_ast.parse(s) {
             Ok(ast) => ast,
             Err(ref e) => {
-                panic!("parsing failed: {}", e);
+                panic!("parsing failed: {e}");
             }
         };
         assert_eq!(ast.use_statements.len(), 2);
@@ -507,7 +494,7 @@ mod test {
         assert_eq!(ast.registers.len(), 2);
         assert_eq!(ast.registers[0].id.name, "PhyConfig");
         assert_eq!(ast.registers[0].width.value, 32);
-        assert_eq!(ast.registers[0].fields.len(), 6);
+        assert_eq!(ast.registers[0].fields.len(), 5);
         assert_eq!(ast.registers[0].fields[0].id.name, "speed");
         assert_eq!(ast.registers[0].fields[0].mode, FieldMode::ReadWrite);
         assert_eq!(
@@ -548,13 +535,9 @@ mod test {
                 id: QualifiedType::from(vec!["cei", "Modulation"])
             }
         );
-        assert_eq!(ast.registers[0].fields[5].id.name, "_");
-        assert_eq!(ast.registers[0].fields[5].mode, FieldMode::Reserved);
-        assert_eq!(ast.registers[0].fields[5].typ, FieldType::Ellipsis,);
-
         assert_eq!(ast.registers[1].id.name, "PhyStatus");
         assert_eq!(ast.registers[1].width.value, 32);
-        assert_eq!(ast.registers[1].fields.len(), 4);
+        assert_eq!(ast.registers[1].fields.len(), 3);
         assert_eq!(ast.registers[1].fields[0].id.name, "carrier");
         assert_eq!(ast.registers[1].fields[0].mode, FieldMode::ReadOnly);
         assert_eq!(ast.registers[1].fields[0].typ, FieldType::Bool);
@@ -564,48 +547,11 @@ mod test {
         assert_eq!(ast.registers[1].fields[2].id.name, "data_valid");
         assert_eq!(ast.registers[1].fields[2].mode, FieldMode::ReadOnly);
         assert_eq!(ast.registers[1].fields[2].typ, FieldType::Bool);
-        assert_eq!(ast.registers[1].fields[3].id.name, "_");
-        assert_eq!(ast.registers[1].fields[3].mode, FieldMode::Reserved);
-        assert_eq!(ast.registers[1].fields[3].typ, FieldType::Ellipsis);
 
-        assert_eq!(ast.blocks.len(), 2);
-        assert_eq!(ast.blocks[0].id.name, "Phy");
-        assert_eq!(ast.blocks[0].elements.len(), 2);
+        assert_eq!(ast.blocks[0].id.name, "Main");
+        assert_eq!(ast.blocks[0].elements.len(), 1);
         assert_eq!(
             ast.blocks[0].elements[0].component,
-            Component::Single {
-                id: Identifier::new("config"),
-                typ: QualifiedType::from(vec!["PhyConfig"])
-            }
-        );
-        assert_eq!(
-            ast.blocks[0].elements[0].offset,
-            Some(Number {
-                value: 0x200,
-                format: NumberFormat::Hex { digits: 3 },
-                span: Span::Any,
-            }),
-        );
-        assert_eq!(
-            ast.blocks[0].elements[1].component,
-            Component::Single {
-                id: Identifier::new("status"),
-                typ: QualifiedType::from(vec!["PhyStatus"])
-            }
-        );
-        assert_eq!(
-            ast.blocks[0].elements[1].offset,
-            Some(Number {
-                value: 0x400,
-                format: NumberFormat::Hex { digits: 3 },
-                span: Span::Any,
-            }),
-        );
-
-        assert_eq!(ast.blocks[1].id.name, "Nic");
-        assert_eq!(ast.blocks[1].elements.len(), 1);
-        assert_eq!(
-            ast.blocks[1].elements[0].component,
             Component::Array {
                 id: Identifier::new("phys"),
                 typ: QualifiedType::from(vec!["Phy"]),
@@ -614,20 +560,54 @@ mod test {
                     format: NumberFormat::Decimal { digits: 1 },
                     span: Span::Any
                 },
-                spacing: Some(Number {
+                spacing: Number {
                     value: 0x1000,
                     format: NumberFormat::Hex { digits: 4 },
                     span: Span::Any
-                }),
+                },
+            }
+        );
+        assert_eq!(
+            ast.blocks[0].elements[0].offset,
+            Number {
+                value: 0x6000,
+                format: NumberFormat::Hex { digits: 4 },
+                span: Span::Any,
+            },
+        );
+
+        assert_eq!(ast.blocks.len(), 2);
+        assert_eq!(ast.blocks[1].id.name, "Phy");
+        assert_eq!(ast.blocks[1].elements.len(), 2);
+        assert_eq!(
+            ast.blocks[1].elements[0].component,
+            Component::Single {
+                id: Identifier::new("config"),
+                typ: QualifiedType::from(vec!["PhyConfig"])
             }
         );
         assert_eq!(
             ast.blocks[1].elements[0].offset,
-            Some(Number {
-                value: 0x6000,
-                format: NumberFormat::Hex { digits: 4 },
+            Number {
+                value: 0x200,
+                format: NumberFormat::Hex { digits: 3 },
                 span: Span::Any,
-            }),
+            },
+        );
+        assert_eq!(
+            ast.blocks[1].elements[1].component,
+            Component::Single {
+                id: Identifier::new("status"),
+                typ: QualifiedType::from(vec!["PhyStatus"])
+            }
+        );
+        assert_eq!(
+            ast.blocks[1].elements[1].offset,
+            Number {
+                value: 0x400,
+                format: NumberFormat::Hex { digits: 3 },
+                span: Span::Any,
+            },
         );
 
         println!("{ast:#?}")

@@ -14,7 +14,7 @@ pub struct Enum {
 impl Emit for Enum {
     fn emit(&self, f: &mut impl std::fmt::Write) -> std::fmt::Result {
         for x in &self.doc {
-            writeln!(f, "///{}", x)?;
+            writeln!(f, "///{x}")?;
         }
         writeln!(f, "enum<{}> {} {{", self.width.to_code(), self.id.name)?;
         for x in &self.alternatives {
@@ -35,7 +35,7 @@ pub struct Alternative {
 impl Emit for Alternative {
     fn emit(&self, f: &mut impl std::fmt::Write) -> std::fmt::Result {
         for x in &self.doc {
-            writeln!(f, "    ///{}", x)?;
+            writeln!(f, "    ///{x}")?;
         }
         writeln!(f, "    {} = {},", self.id.name, self.value.to_code())
     }
@@ -89,7 +89,7 @@ pub struct Field<T> {
     pub id: Identifier,
     pub mode: FieldMode,
     pub typ: T,
-    pub offset: Option<Number>,
+    pub offset: Number,
 }
 
 #[derive(Debug, Clone)]
@@ -111,7 +111,7 @@ pub struct Block<T> {
 pub struct BlockElement<T> {
     pub doc: Vec<String>,
     pub component: Component<T>,
-    pub offset: Option<Number>,
+    pub offset: Number,
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -124,7 +124,7 @@ pub enum Component<T> {
         id: Identifier,
         typ: T,
         length: Number,
-        spacing: Option<Number>,
+        spacing: Number,
     },
 }
 
@@ -137,7 +137,6 @@ pub enum FieldType<T: Display + Typename> {
     Bool,
     Bitfield { width: Number },
     User { id: T },
-    Ellipsis,
 }
 
 impl<T: Display + Typename> Display for FieldType<T> {
@@ -148,7 +147,6 @@ impl<T: Display + Typename> Display for FieldType<T> {
                 write!(f, "{}{}", "b".cyan(), width.value.to_string().cyan())
             }
             Self::User { id } => write!(f, "{}", id.typename()),
-            Self::Ellipsis => write!(f, "{}", "...".cyan()),
         }
     }
 }

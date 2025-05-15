@@ -14,8 +14,8 @@ RSF comes with
 
 - A parser
 - A AST form and library interfaces for working with RSF ASTs.
-- A verified model form and library interfaces for writing code generators
-and tooling around RSF models.
+- A verified model form and library interfaces for writing tooling around RSF.
+- A Rust code generator for creating a register programming interface (RPI).
 
 # Registers
 
