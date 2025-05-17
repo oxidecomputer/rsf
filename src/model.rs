@@ -234,16 +234,26 @@ impl Display for Register {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         writeln!(
             f,
-            "{} {}{}{}{}",
+            "{}\n{} {}{}{}{}",
+            self.doc
+                .iter()
+                .map(|x| x.trim())
+                .collect::<Vec<_>>()
+                .join("\n  ")
+                .dimmed(),
             "register".blue(),
             self.id.name.cyan(),
             "<".dimmed(),
             self.width.value.to_string().yellow(),
             ">".dimmed(),
         )?;
-        for x in &self.fields {
-            writeln!(f, "  {x}")?;
-        }
+        let fields = self
+            .fields
+            .iter()
+            .map(|x| format!("  {x}"))
+            .collect::<Vec<_>>()
+            .join("\n\n");
+        writeln!(f, "{fields}")?;
         Ok(())
     }
 }
@@ -252,7 +262,13 @@ impl Display for Field {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "{}{} {} {}",
+            "{}\n  {}{} {} {}",
+            self.doc
+                .iter()
+                .map(|x| x.trim())
+                .collect::<Vec<_>>()
+                .join("\n  ")
+                .dimmed(),
             self.id.name,
             ":".dimmed(),
             self.mode.to_string().blue(),
