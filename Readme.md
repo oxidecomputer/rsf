@@ -113,6 +113,4 @@ block Nic {
 ```
 
 Here the `Phy` component is an array of 4 `Phy`s, where each `Phy` is spaced
-`0x1000` bytes apart starting at an offset of `0x6000` bytes. The spacing
-specification is optional, if not present elements of the array are densely
-packed.
+`0x1000` bytes apart starting at an offset of `0x6000` bytes.
