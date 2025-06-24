@@ -50,8 +50,49 @@ impl CodegenVisitor {
     }
 }
 
+impl CodegenVisitor {
+    // Todo: the SRAM interface needs to be fleshed out as we get more
+    // experience with both the consumers of the API and the underlying
+    // mechanism.  For now, we simply provide enough functionality to
+    // locate the data in SRAM and instantiate an instance in memory.
+    fn sram(&mut self, reg: Arc<Register>) {
+        let name = format_ident!("{}", reg.id.name.to_case(Case::Pascal));
+        let width = proc_macro2::Literal::u128_unsuffixed(reg.width.value / 8);
+        let addr_type = &self.addr_type;
+
+        let instance_name =
+            format_ident!("{}Instance", reg.id.name.to_case(Case::Pascal));
+
+        let doc = reg.doc.join("\n");
+        let instance_doc = format!("Instance of a [`{}`]", reg.id.name);
+
+        self.register_definitions.extend(quote! {
+
+            #[derive(Debug)]
+            #[doc = #doc]
+            pub struct #name([u8; #width]);
+
+            #[doc = #instance_doc]
+            pub struct #instance_name {
+                pub addr: #addr_type,
+            }
+
+            impl Default for #name {
+                fn default() -> Self {
+                    Self([0; #width])
+                }
+            }
+        })
+    }
+}
+
 impl Visitor for CodegenVisitor {
     fn register(&mut self, reg: Arc<Register>) {
+        // A "register" larger than can be accessed with a single PCI
+        // read/write is assumed to represent a region of SRAM.
+        if reg.width.value > 64 {
+            return self.sram(reg);
+        }
         let name = format_ident!("{}", reg.id.name.to_case(Case::Pascal));
         let width = proc_macro2::Literal::u128_unsuffixed(reg.width.value);
         let mut fields = TokenStream::default();
