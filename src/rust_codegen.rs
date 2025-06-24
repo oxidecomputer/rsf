@@ -519,18 +519,28 @@ pub fn codegen(
     file: &Utf8Path,
     addr_type: AddrType,
     value_type: ValueType,
+    // Registers with more than this many bits will be assumed to be accessed as
+    // SRAM regions rather than simple MMIO registers.
+    reg_size_threshold: u128,
 ) -> Result<String> {
     let ast = crate::parser::parse(file)?;
     let resolved = ModelModules::resolve(&ast, String::default())?;
-    generate_rpi(&resolved, addr_type.into(), value_type.into())
+    generate_rpi(
+        &resolved,
+        addr_type.into(),
+        value_type.into(),
+        reg_size_threshold,
+    )
 }
 
 pub fn generate_rpi(
     model: &ModelModules,
     addr_type: TokenStream,
     value_type: TokenStream,
+    reg_size_threshold: u128,
 ) -> Result<String> {
-    let tokens = generate_rpi_rec(model, addr_type, value_type)?;
+    let tokens =
+        generate_rpi_rec(model, addr_type, value_type, reg_size_threshold)?;
 
     let file: syn::File = syn::parse2(tokens.clone()).map_err(|e| {
         let generated = tokens
@@ -556,20 +566,25 @@ pub fn generate_rpi_rec(
     model: &ModelModules,
     addr_type: TokenStream,
     value_type: TokenStream,
+    reg_size_threshold: u128,
 ) -> Result<TokenStream> {
     let mut cgv = CodegenVisitor {
         addr_type: addr_type.clone(),
         value_type: value_type.clone(),
         prelude: use_statements(),
-        reg_size_threshold: 64,
+        reg_size_threshold,
         ..Default::default()
     };
     model.root.accept(&mut cgv);
     let mut tokens = cgv.tokens();
 
     for (name, module) in &model.used {
-        let model_tokens =
-            generate_rpi_rec(module, addr_type.clone(), value_type.clone())?;
+        let model_tokens = generate_rpi_rec(
+            module,
+            addr_type.clone(),
+            value_type.clone(),
+            reg_size_threshold,
+        )?;
         let modname = format_ident!("{}", name.to_case(Case::Snake));
         tokens.extend(quote! {
             pub mod #modname {
