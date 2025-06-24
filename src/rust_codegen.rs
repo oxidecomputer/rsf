@@ -3,7 +3,7 @@
 use crate::common::{FieldMode, NumberFormat, Typename};
 use crate::model::{Block, Component, FieldType, FieldUserType, Register};
 use crate::model::{ModelModules, Visitor};
-use anyhow::{Result, anyhow};
+use anyhow::{anyhow, Result};
 use camino::Utf8Path;
 use camino_tempfile::NamedUtf8TempFile;
 use convert_case::{Case, Casing};
@@ -24,6 +24,9 @@ struct CodegenVisitor {
     block_definitions: TokenStream,
     block_methods: BTreeMap<String, TokenStream>,
     current_block: String,
+    // Registers with more than this many bits will be assumed to be accessed as
+    // SRAM regions rather than simple MMIO registers.
+    reg_size_threshold: u128,
 }
 
 impl CodegenVisitor {
@@ -48,9 +51,7 @@ impl CodegenVisitor {
         }
         tokens
     }
-}
 
-impl CodegenVisitor {
     // Todo: the SRAM interface needs to be fleshed out as we get more
     // experience with both the consumers of the API and the underlying
     // mechanism.  For now, we simply provide enough functionality to
@@ -90,7 +91,7 @@ impl Visitor for CodegenVisitor {
     fn register(&mut self, reg: Arc<Register>) {
         // A "register" larger than can be accessed with a single PCI
         // read/write is assumed to represent a region of SRAM.
-        if reg.width.value > 64 {
+        if reg.width.value > self.reg_size_threshold {
             return self.sram(reg);
         }
         let name = format_ident!("{}", reg.id.name.to_case(Case::Pascal));
@@ -560,6 +561,7 @@ pub fn generate_rpi_rec(
         addr_type: addr_type.clone(),
         value_type: value_type.clone(),
         prelude: use_statements(),
+        reg_size_threshold: 64,
         ..Default::default()
     };
     model.root.accept(&mut cgv);
