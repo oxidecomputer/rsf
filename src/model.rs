@@ -503,6 +503,7 @@ impl ModelModules {
                 doc: r.doc.clone(),
                 id: r.id.clone(),
                 width: r.width.clone(),
+                sram: r.sram,
                 fields,
             }));
         }
@@ -542,6 +543,7 @@ impl ModelModules {
             mm.root.blocks.push(Arc::new(Block {
                 doc: b.doc.clone(),
                 id: b.id.clone(),
+                sram: b.sram,
                 elements,
             }));
         }
@@ -868,6 +870,12 @@ mod test {
         assert!(matches!(field.typ, FieldType::Bool));
     }
 
+    fn check_value_field(field: &Field, name: &str, mode: FieldMode) {
+        assert_eq!(name, field.id.name);
+        assert_eq!(mode, field.mode);
+        assert!(matches!(field.typ, FieldType::Bitfield { .. }));
+    }
+
     fn check_register_block_single_component(
         block_element: &BlockElement,
         name: &str,
@@ -920,6 +928,37 @@ mod test {
         assert_eq!(stride, spacing.value);
     }
 
+    fn check_block_register_array_component(
+        block_element: &BlockElement,
+        name: &str,
+        type_path: &[&str],
+        typename: &str,
+        count: u128,
+        stride: u128,
+        offset: u128,
+    ) {
+        let Component::Array {
+            id,
+            typ,
+            length,
+            spacing,
+        } = &block_element.component
+        else {
+            panic!("expected single component");
+        };
+        assert_eq!(id.name, name);
+        for (i, p) in type_path.iter().enumerate() {
+            assert_eq!(&typ.module_path[i].id, p);
+        }
+        let ComponentUserType::Register(r) = &typ.typ else {
+            panic!("expected register component");
+        };
+        assert_eq!(typename, r.id.name);
+        assert_eq!(offset, block_element.offset.value);
+        assert_eq!(count, length.value);
+        assert_eq!(stride, spacing.value);
+    }
+
     #[test]
     fn nic_example_resolve() {
         let ast = match parse("examples/nic.rsf".into()) {
@@ -932,11 +971,32 @@ mod test {
         let resolved =
             ModelModules::resolve(&ast, String::from("")).expect("resolve ast");
 
+        for (i, r) in resolved.root.registers.iter().enumerate() {
+            eprintln!("reg {i} : {}", r.id.name);
+        }
+
+        for (i, b) in resolved.root.blocks.iter().enumerate() {
+            eprintln!("block {i} : {}", b.id.name);
+        }
+
+        // After parsing the nic.rsf file, we expect the blocks to be:
+        //   0: Phy  1: Firmware  2: Main
+        // and the registers to be:
+        //    0: PhyConfig  1: PhyStatus  2: Metadata  3: FirmwareInstruction
+        let phy_cfg = &resolved.root.registers[0];
+        let phy_status = &resolved.root.registers[1];
+        let metadata = &resolved.root.registers[2];
+        let inst = &resolved.root.registers[3];
+        let phy = &resolved.root.blocks[0];
+        let firmware = &resolved.root.blocks[1];
+        let main = &resolved.root.blocks[2];
+
         // check PhyConfig
-        assert_eq!(resolved.root.registers[0].id.name, "PhyConfig");
-        assert_eq!(resolved.root.registers[0].width.value, 32);
+        assert_eq!(phy_cfg.id.name, "PhyConfig");
+        assert_eq!(phy_cfg.width.value, 32);
+        assert!(!phy_cfg.sram);
         check_enum_field(
-            &resolved.root.registers[0].fields[0],
+            &phy_cfg.fields[0],
             "speed",
             FieldMode::ReadWrite,
             // first path element is the "root"
@@ -944,28 +1004,28 @@ mod test {
             "DataRate",
         );
         check_enum_field(
-            &resolved.root.registers[0].fields[1],
+            &phy_cfg.fields[1],
             "reach",
             FieldMode::ReadWrite,
             &["", "ethernet"],
             "Reach",
         );
         check_enum_field(
-            &resolved.root.registers[0].fields[2],
+            &phy_cfg.fields[2],
             "lanes",
             FieldMode::ReadWrite,
             &[""],
             "Lanes",
         );
         check_enum_field(
-            &resolved.root.registers[0].fields[3],
+            &phy_cfg.fields[3],
             "fec",
             FieldMode::ReadWrite,
             &["", "ethernet"],
             "Fec",
         );
         check_enum_field(
-            &resolved.root.registers[0].fields[4],
+            &phy_cfg.fields[4],
             "modulation",
             FieldMode::ReadWrite,
             &["", "cei"],
@@ -973,45 +1033,77 @@ mod test {
         );
 
         // check PhyStatus
-        assert_eq!(resolved.root.registers[1].id.name, "PhyStatus");
-        assert_eq!(resolved.root.registers[1].width.value, 32);
+        assert_eq!(phy_status.id.name, "PhyStatus");
+        assert_eq!(phy_status.width.value, 32);
+        assert!(!phy_status.sram);
+        check_bool_field(&phy_status.fields[0], "carrier", FieldMode::ReadOnly);
         check_bool_field(
-            &resolved.root.registers[1].fields[0],
-            "carrier",
-            FieldMode::ReadOnly,
-        );
-        check_bool_field(
-            &resolved.root.registers[1].fields[1],
+            &phy_status.fields[1],
             "signal_error",
             FieldMode::ReadOnly,
         );
         check_bool_field(
-            &resolved.root.registers[1].fields[2],
+            &phy_status.fields[2],
             "data_valid",
             FieldMode::ReadOnly,
         );
 
+        // check Metadata
+        assert_eq!(metadata.id.name, "Metadata");
+        assert_eq!(metadata.width.value, 32);
+        assert!(metadata.sram);
+        check_value_field(&metadata.fields[0], "value", FieldMode::ReadWrite);
+
+        // check Firmware Instruction
+        assert_eq!(inst.id.name, "FirmwareInstruction");
+        assert_eq!(inst.width.value, 32);
+        assert!(inst.sram);
+        check_value_field(&metadata.fields[0], "value", FieldMode::ReadWrite);
+
         // check Phy
-        assert_eq!(&resolved.root.blocks[0].id.name, "Phy");
+        assert_eq!(&phy.id.name, "Phy");
+        assert!(!phy.sram);
         check_register_block_single_component(
-            &resolved.root.blocks[0].elements[0],
+            &phy.elements[0],
             "config",
             &[],
             "PhyConfig",
             0x200,
         );
         check_register_block_single_component(
-            &resolved.root.blocks[0].elements[1],
+            &phy.elements[1],
             "status",
             &[],
             "PhyStatus",
             0x400,
         );
 
+        // check Firmware
+        assert_eq!(&firmware.id.name, "Firmware");
+        assert!(firmware.sram);
+        check_block_register_array_component(
+            &firmware.elements[0],
+            "metadata",
+            &[],
+            "Metadata",
+            64,
+            0x20,
+            0x0,
+        );
+        check_block_register_array_component(
+            &firmware.elements[1],
+            "instructions",
+            &[],
+            "FirmwareInstruction",
+            1024,
+            0x40,
+            0x800,
+        );
+
         // check Main
-        assert_eq!(&resolved.root.blocks[1].id.name, "Main");
+        assert_eq!(&main.id.name, "Main");
         check_block_block_array_component(
-            &resolved.root.blocks[1].elements[0],
+            &main.elements[0],
             "phys",
             &[],
             "Phy",

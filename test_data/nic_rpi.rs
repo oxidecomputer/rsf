@@ -172,6 +172,20 @@ impl rust_rpi::RegisterInstance<PhyStatus, u32, u32> for PhyStatusInstance {
         self.write(platform, value)
     }
 }
+#[derive(Debug, Default)]
+/// Metadata value
+pub struct Metadata([u8; 32]);
+///Instance of a [`Metadata`]
+pub struct MetadataInstance {
+    pub msel_id: u32,
+}
+#[derive(Debug, Default)]
+/// Firmware instruction
+pub struct FirmwareInstruction([u8; 32]);
+///Instance of a [`FirmwareInstruction`]
+pub struct FirmwareInstructionInstance {
+    pub msel_id: u32,
+}
 /// Number of lanes per phy.
 #[derive(num_enum::TryFromPrimitive, PartialEq, Debug)]
 #[repr(u8)]
@@ -204,6 +218,11 @@ impl TryFrom<BitSet<2>> for Lanes {
 pub struct PhyInstance {
     pub addr: u32,
 }
+/// Firmware block
+#[derive(Default, Debug)]
+pub struct FirmwareInstance {
+    pub addr: u32,
+}
 /// Register programming interface for this NIC.
 #[derive(Default, Debug)]
 pub struct Client {
@@ -218,6 +237,24 @@ impl Client {
         Ok(PhyInstance {
             addr: self.addr + 0x6000 + (index * 0x1000),
         })
+    }
+    /// The NIC's firmware.
+    pub fn firmware(&self) -> FirmwareInstance {
+        FirmwareInstance {
+            addr: self.addr + 0x10000,
+        }
+    }
+}
+impl FirmwareInstance {
+    /// Metadata section of firmware
+    pub fn metadata(&self) -> MetadataInstance {
+        MetadataInstance { msel_id: 0 }
+    }
+    /// Instruction section of firmware
+    pub fn instructions(&self) -> FirmwareInstructionInstance {
+        FirmwareInstructionInstance {
+            msel_id: 1,
+        }
     }
 }
 impl PhyInstance {
