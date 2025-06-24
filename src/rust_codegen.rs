@@ -3,7 +3,7 @@
 use crate::common::{FieldMode, NumberFormat, Typename};
 use crate::model::{Block, Component, FieldType, FieldUserType, Register};
 use crate::model::{ModelModules, Visitor};
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use camino::Utf8Path;
 use camino_tempfile::NamedUtf8TempFile;
 use convert_case::{Case, Casing};
