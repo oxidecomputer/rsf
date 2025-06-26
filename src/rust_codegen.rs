@@ -3,7 +3,7 @@
 use crate::common::{FieldMode, NumberFormat, Typename};
 use crate::model::{Block, Component, FieldType, FieldUserType, Register};
 use crate::model::{ModelModules, Visitor};
-use anyhow::{Result, anyhow};
+use anyhow::{anyhow, Result};
 use camino::Utf8Path;
 use camino_tempfile::NamedUtf8TempFile;
 use convert_case::{Case, Casing};
@@ -510,14 +510,10 @@ impl Visitor for CodegenVisitor {
         &mut self,
         _id: &crate::ast::Identifier,
         _path: &[crate::ast::Identifier],
-        block: Arc<Block>,
+        _block: Arc<Block>,
         _array_index: Option<u128>,
         _addr: u128,
     ) -> bool {
-        let name = match block.id.name.as_str() {
-            "Main" => "Client",
-            other => other,
-        };
         true
     }
 }
