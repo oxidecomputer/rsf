@@ -10,6 +10,7 @@ use convert_case::{Case, Casing};
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 use std::collections::BTreeMap;
+use std::collections::BTreeSet;
 use std::io::Write;
 use std::str::FromStr;
 use std::sync::Arc;
@@ -23,10 +24,31 @@ struct CodegenVisitor {
     enum_definitions: TokenStream,
     block_definitions: TokenStream,
     block_methods: BTreeMap<String, TokenStream>,
-    current_block: String,
-    // Registers with more than this many bits will be assumed to be accessed as
-    // SRAM regions rather than simple MMIO registers.
-    reg_size_threshold: u128,
+    sram_registers: SramRegSet,
+}
+
+// This singleton type is used to cleanly deal with the fact that the registers
+// are named with different cases in different parts of the code.
+struct SramRegSet(BTreeSet<String>);
+impl SramRegSet {
+    pub fn new() -> Self {
+        SramRegSet(BTreeSet::new())
+    }
+
+    pub fn insert(&mut self, t: impl ToString) {
+        let key = t.to_string().to_case(Case::Pascal);
+        self.0.insert(key);
+    }
+
+    pub fn contains(&self, t: impl ToString) -> bool {
+        let key = t.to_string().to_case(Case::Pascal);
+        self.0.contains(&key)
+    }
+}
+impl Default for SramRegSet {
+    fn default() -> Self {
+        SramRegSet::new()
+    }
 }
 
 impl CodegenVisitor {
@@ -58,8 +80,7 @@ impl CodegenVisitor {
     // locate the data in SRAM and instantiate an instance in memory.
     fn sram(&mut self, reg: Arc<Register>) {
         let name = format_ident!("{}", reg.id.name.to_case(Case::Pascal));
-        let width = proc_macro2::Literal::u128_unsuffixed(reg.width.value / 8);
-        let addr_type = &self.addr_type;
+        let width = proc_macro2::Literal::u128_unsuffixed(reg.width.value);
 
         let instance_name =
             format_ident!("{}Instance", reg.id.name.to_case(Case::Pascal));
@@ -75,7 +96,7 @@ impl CodegenVisitor {
 
             #[doc = #instance_doc]
             pub struct #instance_name {
-                pub addr: #addr_type,
+                pub msel_id: u32,
             }
 
             impl Default for #name {
@@ -89,9 +110,7 @@ impl CodegenVisitor {
 
 impl Visitor for CodegenVisitor {
     fn register(&mut self, reg: Arc<Register>) {
-        // A "register" larger than can be accessed with a single PCI
-        // read/write is assumed to represent a region of SRAM.
-        if reg.width.value > self.reg_size_threshold {
+        if self.sram_registers.contains(&reg.id.name) {
             return self.sram(reg);
         }
         let name = format_ident!("{}", reg.id.name.to_case(Case::Pascal));
@@ -376,7 +395,7 @@ impl Visitor for CodegenVisitor {
             ),
         };
 
-        self.current_block = name.to_owned();
+        let current_block = name.to_owned();
 
         let addr_type = &self.addr_type;
         let doc = block.doc.join("\n");
@@ -389,14 +408,24 @@ impl Visitor for CodegenVisitor {
             }
         });
 
-        for element in &block.elements {
+        let mut idx = 0;
+        let mut elements = block.elements.clone();
+        elements.sort_by(|a, b| a.offset.value.cmp(&b.offset.value));
+        for element in elements {
             let doc = element.doc.join("\n");
             let mut tokens = self
                 .block_methods
-                .get(&self.current_block)
+                .get(&current_block)
                 .cloned()
                 .unwrap_or_default();
 
+            // SRAM memory is accessed indirectly and is addressed using a
+            // "memory selector ID".  The IDs are assigned in offset order, but
+            // can't be calculated directly from the offset.  Thus, we ensure
+            // the elements are sorted above, and build the msel_id from the
+            // index here.
+            let msel_id =
+                proc_macro2::Literal::from_str(&format!("{idx}")).unwrap();
             let offset = proc_macro2::Literal::from_str(&format!(
                 "0x{:x}",
                 element.offset.value
@@ -409,16 +438,26 @@ impl Visitor for CodegenVisitor {
                         format_ident!("{}", id.name.to_case(Case::Snake));
                     let type_name =
                         typename_to_qualified_ident(typ, "Instance");
-                    tokens.extend(quote! {
-                        #[doc = #doc]
-                        pub fn #method_name(&self) -> #type_name {
-                            #type_name {
-                                addr: self.addr + #offset,
+                    if self.sram_registers.contains(&id.name) {
+                        tokens.extend(quote! {
+                            #[doc = #doc]
+                            pub fn #method_name(&self) -> #type_name {
+                                #type_name {
+                                    msel_id: #msel_id,
+                                }
                             }
-                        }
-                    });
-                    self.block_methods
-                        .insert(self.current_block.clone(), tokens);
+                        });
+                    } else {
+                        tokens.extend(quote! {
+                            #[doc = #doc]
+                            pub fn #method_name(&self) -> #type_name {
+                                #type_name {
+                                    addr: self.addr + #offset,
+                                }
+                            }
+                        });
+                    }
+                    self.block_methods.insert(current_block.clone(), tokens);
                 }
                 Component::Array {
                     id,
@@ -437,7 +476,17 @@ impl Visitor for CodegenVisitor {
                     .unwrap();
                     let length =
                         proc_macro2::Literal::u128_unsuffixed(length.value);
-                    tokens.extend(quote! {
+                    if self.sram_registers.contains(&id.name) {
+                        tokens.extend(quote! {
+                        #[doc = #doc]
+                            pub fn #method_name(&self) -> #type_name {
+                                #type_name {
+                                    msel_id: #msel_id,
+                                }
+                            }
+                        })
+                    } else {
+                        tokens.extend(quote! {
                         #[doc = #doc]
                         pub fn #method_name(&self, index: #addr_type)
                             -> Result<#type_name, rust_rpi::OutOfRange> {
@@ -449,10 +498,11 @@ impl Visitor for CodegenVisitor {
                             })
                         }
                     });
-                    self.block_methods
-                        .insert(self.current_block.clone(), tokens);
+                    }
+                    self.block_methods.insert(current_block.clone(), tokens);
                 }
             }
+            idx += 1;
         }
     }
 
@@ -468,7 +518,6 @@ impl Visitor for CodegenVisitor {
             "Main" => "Client",
             other => other,
         };
-        self.current_block = name.to_owned();
         true
     }
 }
@@ -519,28 +568,18 @@ pub fn codegen(
     file: &Utf8Path,
     addr_type: AddrType,
     value_type: ValueType,
-    // Registers with more than this many bits will be assumed to be accessed as
-    // SRAM regions rather than simple MMIO registers.
-    reg_size_threshold: u128,
 ) -> Result<String> {
     let ast = crate::parser::parse(file)?;
     let resolved = ModelModules::resolve(&ast, String::default())?;
-    generate_rpi(
-        &resolved,
-        addr_type.into(),
-        value_type.into(),
-        reg_size_threshold,
-    )
+    generate_rpi(&resolved, addr_type.into(), value_type.into())
 }
 
 pub fn generate_rpi(
     model: &ModelModules,
     addr_type: TokenStream,
     value_type: TokenStream,
-    reg_size_threshold: u128,
 ) -> Result<String> {
-    let tokens =
-        generate_rpi_rec(model, addr_type, value_type, reg_size_threshold)?;
+    let tokens = generate_rpi_rec(model, addr_type, value_type)?;
 
     let file: syn::File = syn::parse2(tokens.clone()).map_err(|e| {
         let generated = tokens
@@ -566,25 +605,34 @@ pub fn generate_rpi_rec(
     model: &ModelModules,
     addr_type: TokenStream,
     value_type: TokenStream,
-    reg_size_threshold: u128,
 ) -> Result<TokenStream> {
+    let mut sram_registers = SramRegSet::new();
+    for b in &model.root.blocks {
+        if b.sram {
+            for e in &b.elements {
+                let n = match &e.component {
+                    Component::Single { id, .. } => id.name.to_string(),
+                    Component::Array { id, .. } => id.name.to_string(),
+                };
+                sram_registers.insert(n);
+            }
+        }
+    }
+
     let mut cgv = CodegenVisitor {
         addr_type: addr_type.clone(),
         value_type: value_type.clone(),
         prelude: use_statements(),
-        reg_size_threshold,
+        sram_registers,
         ..Default::default()
     };
+
     model.root.accept(&mut cgv);
     let mut tokens = cgv.tokens();
 
     for (name, module) in &model.used {
-        let model_tokens = generate_rpi_rec(
-            module,
-            addr_type.clone(),
-            value_type.clone(),
-            reg_size_threshold,
-        )?;
+        let model_tokens =
+            generate_rpi_rec(module, addr_type.clone(), value_type.clone())?;
         let modname = format_ident!("{}", name.to_case(Case::Snake));
         tokens.extend(quote! {
             pub mod #modname {

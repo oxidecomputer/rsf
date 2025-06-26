@@ -289,6 +289,8 @@ pub fn parse_block(input: &mut Input) -> ModalResult<Block> {
 
 pub fn parse_block_cut(input: &mut Input) -> ModalResult<Block> {
     let id = identifier_parser.parse_next(input)?;
+    let sram = token("Sram").parse_next(input).is_ok();
+
     token("{").parse_next(input)?;
     let elements =
         separated(0.., block_element_parser, token(",")).parse_next(input)?;
@@ -298,6 +300,7 @@ pub fn parse_block_cut(input: &mut Input) -> ModalResult<Block> {
     Ok(Block {
         doc: Vec::default(),
         id,
+        sram,
         elements,
     })
 }
