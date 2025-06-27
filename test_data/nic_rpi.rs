@@ -65,6 +65,11 @@ pub struct PhyConfigInstance {
     pub addr: u32,
 }
 impl rust_rpi::RegisterInstance<PhyConfig, u32, u32> for PhyConfigInstance {
+    fn cons(&self) -> PhyConfig {
+        let mut v = PhyConfig::default();
+        v.reset();
+        v
+    }
     fn read<P: rust_rpi::Platform<u32, u32>>(
         &self,
         platform: &P,
@@ -131,6 +136,11 @@ pub struct PhyStatusInstance {
     pub addr: u32,
 }
 impl rust_rpi::RegisterInstance<PhyStatus, u32, u32> for PhyStatusInstance {
+    fn cons(&self) -> PhyStatus {
+        let mut v = PhyStatus::default();
+        v.reset();
+        v
+    }
     fn read<P: rust_rpi::Platform<u32, u32>>(
         &self,
         platform: &P,
