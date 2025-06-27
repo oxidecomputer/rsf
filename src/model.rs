@@ -540,6 +540,7 @@ impl ModelModules {
             mm.root.blocks.push(Arc::new(Block {
                 doc: b.block.doc.clone(),
                 id: b.block.id.clone(),
+                sram: b.block.sram,
                 elements,
             }));
         }

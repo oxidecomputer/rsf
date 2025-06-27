@@ -104,6 +104,7 @@ pub struct Register<T> {
 pub struct Block<T> {
     pub doc: Vec<String>,
     pub id: Identifier,
+    pub sram: bool,
     pub elements: Vec<BlockElement<T>>,
 }
 

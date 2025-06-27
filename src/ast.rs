@@ -129,7 +129,15 @@ impl Emit for Block {
         for x in &self.doc {
             writeln!(f, "///{x}")?;
         }
-        writeln!(f, "block {} {{", self.id.name)?;
+        writeln!(
+            f,
+            "block {}{} {{",
+            self.id.name,
+            match self.sram {
+                true => " Sram",
+                false => "",
+            }
+        )?;
         for x in &self.elements {
             x.emit(f)?;
         }
