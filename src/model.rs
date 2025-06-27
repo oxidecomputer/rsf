@@ -425,6 +425,7 @@ impl Display for ComponentUserType {
     }
 }
 
+/// Build a directed asyclic graph of blocks according to subblock nesting.
 fn block_dag<'a>(
     m: &'a AstModules,
 ) -> Result<Acyclic<DiGraph<&'a crate::ast::Block, ()>>> {
@@ -455,6 +456,8 @@ fn block_dag<'a>(
     Acyclic::try_from_graph(g).map_err(|e| anyhow::anyhow!("{:?}", e))
 }
 
+/// Build a directed asyclic graph of blocks according to subblock nesting
+/// and sort based on topological order.
 fn block_topological_sort(m: &AstModules) -> Result<Vec<&crate::ast::Block>> {
     let dag = block_dag(m)?;
     let sorted =
@@ -506,8 +509,7 @@ impl ModelModules {
 
         // Blocks can refrence each other in a module. This can cause problems
         // if we try to resolve a block that has a reference to an unresolved
-        // block. Sort blocks according to reference count, so we resolve the
-        // most referenced blocks first.
+        // block. Sort blocks topologically to avoid this issue.
         let blocks = block_topological_sort(m)?;
 
         for b in &blocks {
