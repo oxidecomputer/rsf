@@ -455,9 +455,7 @@ fn block_dag<'a>(
     Acyclic::try_from_graph(g).map_err(|e| anyhow::anyhow!("{:?}", e))
 }
 
-fn block_topological_sort<'a>(
-    m: &'a AstModules,
-) -> Result<Vec<&'a crate::ast::Block>> {
+fn block_topological_sort(m: &AstModules) -> Result<Vec<&crate::ast::Block>> {
     let dag = block_dag(m)?;
     let sorted =
         toposort(&dag, None).map_err(|e| anyhow::anyhow!("{:?}", e))?;
