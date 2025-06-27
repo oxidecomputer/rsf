@@ -425,7 +425,7 @@ impl Display for ComponentUserType {
     }
 }
 
-/// Build a directed asyclic graph of blocks according to subblock nesting.
+/// Build a directed acyclic graph of blocks according to subblock nesting.
 fn block_dag<'a>(
     m: &'a AstModules,
 ) -> Result<Acyclic<DiGraph<&'a crate::ast::Block, ()>>> {
@@ -456,7 +456,7 @@ fn block_dag<'a>(
     Acyclic::try_from_graph(g).map_err(|e| anyhow::anyhow!("{:?}", e))
 }
 
-/// Build a directed asyclic graph of blocks according to subblock nesting
+/// Build a directed acyclic graph of blocks according to subblock nesting
 /// and sort based on topological order.
 fn block_topological_sort(m: &AstModules) -> Result<Vec<&crate::ast::Block>> {
     let dag = block_dag(m)?;
