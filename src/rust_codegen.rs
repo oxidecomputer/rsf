@@ -203,6 +203,12 @@ impl Visitor for CodegenVisitor {
             }
 
             impl rust_rpi::RegisterInstance<#name, #addr_type, #value_type> for #instance_name {
+                fn new(&self) -> #name {
+                    let mut v = #name::default();
+                    v.reset();
+		    v
+                }
+
                 fn read<
                     P: rust_rpi::Platform<#addr_type, #value_type>,
                 >(
