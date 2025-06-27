@@ -6,6 +6,7 @@ use crate::{
 };
 use anyhow::{Result, anyhow};
 use colored::*;
+use petgraph::{acyclic::Acyclic, algo::toposort, graph::DiGraph};
 use std::{
     collections::{BTreeMap, VecDeque},
     fmt::Display,
@@ -424,6 +425,47 @@ impl Display for ComponentUserType {
     }
 }
 
+/// Build a directed acyclic graph of blocks according to subblock nesting.
+fn block_dag<'a>(
+    m: &'a AstModules,
+) -> Result<Acyclic<DiGraph<&'a crate::ast::Block, ()>>> {
+    let mut g = DiGraph::<&'a crate::ast::Block, ()>::default();
+
+    for b in &m.root.blocks {
+        g.add_node(b);
+    }
+
+    for bi in g.node_indices() {
+        let b = g[bi];
+        for e in &b.elements {
+            let id = match &e.component {
+                crate::ast::Component::Single { id: _, typ } => typ.typename(),
+                crate::ast::Component::Array {
+                    id: _,
+                    typ,
+                    length: _,
+                    spacing: _,
+                } => typ.typename(),
+            };
+            if let Some(n) = g.node_indices().find(|x| g[*x].id.name == id) {
+                g.add_edge(bi, n, ());
+            }
+        }
+    }
+
+    Acyclic::try_from_graph(g).map_err(|e| anyhow::anyhow!("{:?}", e))
+}
+
+/// Build a directed acyclic graph of blocks according to subblock nesting
+/// and sort based on topological order.
+fn block_topological_sort(m: &AstModules) -> Result<Vec<&crate::ast::Block>> {
+    let dag = block_dag(m)?;
+    let sorted =
+        toposort(&dag, None).map_err(|e| anyhow::anyhow!("{:?}", e))?;
+
+    Ok(sorted.iter().map(|x| dag[*x]).rev().collect())
+}
+
 impl ModelModules {
     pub fn resolve(m: &AstModules, id: String) -> Result<Self> {
         let mut mm = Self {
@@ -465,54 +507,14 @@ impl ModelModules {
             }));
         }
 
-        // Blocks can refrence each other in a module. This can cause
-        // problems if we try to resolve a block that has a reference
-        // to an unresolved block. The next bit of code sorts blocks
-        // according to reference count, so we resolve the most referenced
-        // blocks first. There are likely cases this does not address and
-        // we should really create a DAG, but this works for now.
-
-        #[derive(Debug)]
-        struct ReferencedBlock<'a> {
-            block: &'a crate::ast::Block,
-            refs: usize,
-        }
-
-        let mut blocks = m
-            .root
-            .blocks
-            .iter()
-            .map(|x| ReferencedBlock { block: x, refs: 0 })
-            .collect::<Vec<_>>();
-
-        for b in &m.root.blocks {
-            for e in &b.elements {
-                let id = match &e.component {
-                    crate::ast::Component::Single { id: _, typ } => {
-                        typ.typename()
-                    }
-                    crate::ast::Component::Array {
-                        id: _,
-                        typ,
-                        length: _,
-                        spacing: _,
-                    } => typ.typename(),
-                };
-                let Some(target) =
-                    blocks.iter_mut().find(|x| x.block.id.name == id)
-                else {
-                    continue;
-                };
-
-                target.refs += 1;
-            }
-        }
-
-        blocks.sort_by(|x, y| y.refs.cmp(&x.refs));
+        // Blocks can refrence each other in a module. This can cause problems
+        // if we try to resolve a block that has a reference to an unresolved
+        // block. Sort blocks topologically to avoid this issue.
+        let blocks = block_topological_sort(m)?;
 
         for b in &blocks {
             let mut elements = Vec::default();
-            for e in &b.block.elements {
+            for e in &b.elements {
                 elements.push(BlockElement {
                     doc: e.doc.clone(),
                     component: match &e.component {
@@ -538,8 +540,8 @@ impl ModelModules {
                 })
             }
             mm.root.blocks.push(Arc::new(Block {
-                doc: b.block.doc.clone(),
-                id: b.block.id.clone(),
+                doc: b.doc.clone(),
+                id: b.id.clone(),
                 elements,
             }));
         }
