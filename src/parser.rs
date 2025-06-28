@@ -165,9 +165,11 @@ pub fn parse_reg_top(input: &mut Input) -> ModalResult<Top> {
 
 pub fn parse_reg(input: &mut Input) -> ModalResult<Register> {
     let doc = doc_comment_parser.parse_next(input)?;
+    let sram = token("sram").parse_next(input).is_ok();
     token("register").parse_next(input)?;
     let mut reg = cut_err(parse_reg_cut).parse_next(input)?;
     reg.doc = doc;
+    reg.sram = sram;
     Ok(reg)
 }
 
@@ -183,6 +185,7 @@ pub fn parse_reg_cut(input: &mut Input) -> ModalResult<Register> {
         doc: Vec::default(),
         id,
         width,
+        sram: false,
         fields,
     })
 }
@@ -281,15 +284,16 @@ pub fn parse_block_top(input: &mut Input) -> ModalResult<Top> {
 
 pub fn parse_block(input: &mut Input) -> ModalResult<Block> {
     let doc = doc_comment_parser.parse_next(input)?;
+    let sram = token("sram").parse_next(input).is_ok();
     token("block").parse_next(input)?;
     let mut blk = cut_err(parse_block_cut).parse_next(input)?;
     blk.doc = doc;
+    blk.sram = sram;
     Ok(blk)
 }
 
 pub fn parse_block_cut(input: &mut Input) -> ModalResult<Block> {
     let id = identifier_parser.parse_next(input)?;
-    let sram = token("Sram").parse_next(input).is_ok();
 
     token("{").parse_next(input)?;
     let elements =
@@ -300,7 +304,7 @@ pub fn parse_block_cut(input: &mut Input) -> ModalResult<Block> {
     Ok(Block {
         doc: Vec::default(),
         id,
-        sram,
+        sram: false,
         elements,
     })
 }

@@ -3,14 +3,13 @@
 use crate::common::{FieldMode, NumberFormat, Typename};
 use crate::model::{Block, Component, FieldType, FieldUserType, Register};
 use crate::model::{ModelModules, Visitor};
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use camino::Utf8Path;
 use camino_tempfile::NamedUtf8TempFile;
 use convert_case::{Case, Casing};
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 use std::collections::BTreeMap;
-use std::collections::BTreeSet;
 use std::io::Write;
 use std::str::FromStr;
 use std::sync::Arc;
@@ -24,31 +23,6 @@ struct CodegenVisitor {
     enum_definitions: TokenStream,
     block_definitions: TokenStream,
     block_methods: BTreeMap<String, TokenStream>,
-    sram_registers: SramRegSet,
-}
-
-// This singleton type is used to cleanly deal with the fact that the registers
-// are named with different cases in different parts of the code.
-struct SramRegSet(BTreeSet<String>);
-impl SramRegSet {
-    pub fn new() -> Self {
-        SramRegSet(BTreeSet::new())
-    }
-
-    pub fn insert(&mut self, t: impl ToString) {
-        let key = t.to_string().to_case(Case::Pascal);
-        self.0.insert(key);
-    }
-
-    pub fn contains(&self, t: impl ToString) -> bool {
-        let key = t.to_string().to_case(Case::Pascal);
-        self.0.contains(&key)
-    }
-}
-impl Default for SramRegSet {
-    fn default() -> Self {
-        SramRegSet::new()
-    }
 }
 
 impl CodegenVisitor {
@@ -110,7 +84,7 @@ impl CodegenVisitor {
 
 impl Visitor for CodegenVisitor {
     fn register(&mut self, reg: Arc<Register>) {
-        if self.sram_registers.contains(&reg.id.name) {
+        if reg.sram {
             return self.sram(reg);
         }
         let name = format_ident!("{}", reg.id.name.to_case(Case::Pascal));
@@ -408,10 +382,9 @@ impl Visitor for CodegenVisitor {
             }
         });
 
-        let mut idx = 0;
         let mut elements = block.elements.clone();
         elements.sort_by(|a, b| a.offset.value.cmp(&b.offset.value));
-        for element in elements {
+        for (idx, element) in elements.iter().enumerate() {
             let doc = element.doc.join("\n");
             let mut tokens = self
                 .block_methods
@@ -438,7 +411,7 @@ impl Visitor for CodegenVisitor {
                         format_ident!("{}", id.name.to_case(Case::Snake));
                     let type_name =
                         typename_to_qualified_ident(typ, "Instance");
-                    if self.sram_registers.contains(&id.name) {
+                    if block.sram {
                         tokens.extend(quote! {
                             #[doc = #doc]
                             pub fn #method_name(&self) -> #type_name {
@@ -476,7 +449,7 @@ impl Visitor for CodegenVisitor {
                     .unwrap();
                     let length =
                         proc_macro2::Literal::u128_unsuffixed(length.value);
-                    if self.sram_registers.contains(&id.name) {
+                    if block.sram {
                         tokens.extend(quote! {
                         #[doc = #doc]
                             pub fn #method_name(&self) -> #type_name {
@@ -502,7 +475,6 @@ impl Visitor for CodegenVisitor {
                     self.block_methods.insert(current_block.clone(), tokens);
                 }
             }
-            idx += 1;
         }
     }
 
@@ -602,24 +574,10 @@ pub fn generate_rpi_rec(
     addr_type: TokenStream,
     value_type: TokenStream,
 ) -> Result<TokenStream> {
-    let mut sram_registers = SramRegSet::new();
-    for b in &model.root.blocks {
-        if b.sram {
-            for e in &b.elements {
-                let n = match &e.component {
-                    Component::Single { id, .. } => id.name.to_string(),
-                    Component::Array { id, .. } => id.name.to_string(),
-                };
-                sram_registers.insert(n);
-            }
-        }
-    }
-
     let mut cgv = CodegenVisitor {
         addr_type: addr_type.clone(),
         value_type: value_type.clone(),
         prelude: use_statements(),
-        sram_registers,
         ..Default::default()
     };
 

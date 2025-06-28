@@ -461,6 +461,7 @@ impl ModelModules {
                 doc: r.doc.clone(),
                 id: r.id.clone(),
                 width: r.width.clone(),
+                sram: r.sram,
                 fields,
             }));
         }
