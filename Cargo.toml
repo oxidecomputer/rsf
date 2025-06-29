@@ -20,6 +20,7 @@ bitset = { git = "https://github.com/oxidecomputer/bitset" }
 bitset-macro = { git = "https://github.com/oxidecomputer/bitset" }
 thiserror = "2.0.12"
 petgraph = "0.8.2"
+clap = { version = "4.5.40", features = ["derive"] }
 
 [dev-dependencies]
 expectorate = "1.1.0"
