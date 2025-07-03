@@ -52,7 +52,7 @@ impl PhyConfig {
 }
 impl From<u32> for PhyConfig {
     fn from(value: u32) -> Self {
-        Self(BitSet::<32>::try_from(value).unwrap())
+        Self(BitSet::<32>::from(value))
     }
 }
 impl From<PhyConfig> for u32 {
@@ -123,7 +123,7 @@ impl PhyStatus {
 }
 impl From<u32> for PhyStatus {
     fn from(value: u32) -> Self {
-        Self(BitSet::<32>::try_from(value).unwrap())
+        Self(BitSet::<32>::from(value))
     }
 }
 impl From<PhyStatus> for u32 {

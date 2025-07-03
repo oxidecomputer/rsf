@@ -171,6 +171,14 @@ impl Visitor for CodegenVisitor {
 
         let doc = reg.doc.join("\n");
         let instance_doc = format!("Instance of a [`{}`]", reg.id.name);
+        let conversion = match reg.width.value {
+            8 | 16 | 32 | 64 => quote! {
+                BitSet::<#width>::from(value)
+            },
+            _ => quote! {
+                BitSet::<#width>::try_from(value).unwrap()
+            },
+        };
 
         self.register_definitions.extend(quote! {
 
@@ -188,7 +196,7 @@ impl Visitor for CodegenVisitor {
             impl From<#value_type> for #name {
                 fn from(value: #value_type) -> Self {
                     //TODO should be fallible
-                    Self(BitSet::<#width>::try_from(value).unwrap())
+                    Self(#conversion)
                 }
             }
 
