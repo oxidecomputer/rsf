@@ -23,7 +23,7 @@ checksum = "5c8214115b7bf84099f1309324e63141d4c5d7cc26862f97a0a857dbefe165bd"
 [[package]]
 name = "bitset"
 version = "0.1.0"
-source = "git+https://github.com/oxidecomputer/bitset#ce9bcbb048acf168655db6aaa89e7334d3a85e04"
+source = "git+https://github.com/oxidecomputer/bitset#f8ff5bf713ad3950dd12d8fe98a34897fb2795d9"
 dependencies = [
  "bitset-macro",
  "seq-macro",
@@ -32,7 +32,7 @@ dependencies = [
 [[package]]
 name = "bitset-macro"
 version = "0.1.0"
-source = "git+https://github.com/oxidecomputer/bitset#ce9bcbb048acf168655db6aaa89e7334d3a85e04"
+source = "git+https://github.com/oxidecomputer/bitset#f8ff5bf713ad3950dd12d8fe98a34897fb2795d9"
 dependencies = [
  "proc-macro2",
  "quote",
