@@ -88,6 +88,9 @@ impl Visitor for CodegenVisitor {
                     }
                 }
                 FieldType::Bitfield { width } => {
+                    if width.value > 64 {
+                        continue;
+                    }
                     let width =
                         proc_macro2::Literal::u128_unsuffixed(width.value);
                     if f.mode == FieldMode::ReadOnly
@@ -185,7 +188,7 @@ impl Visitor for CodegenVisitor {
             impl From<#value_type> for #name {
                 fn from(value: #value_type) -> Self {
                     //TODO should be fallible
-                    Self(BitSet::<#width>::from_int(value).unwrap())
+                    Self(BitSet::<#width>::try_from(value).unwrap())
                 }
             }
 
@@ -193,7 +196,7 @@ impl Visitor for CodegenVisitor {
                 fn from(value: #name) -> Self {
                     //TODO it's not obvious without looking here that value_type
                     // should be an integer of some kind
-                    value.0.to_int()
+                    #value_type::from(value.0)
                 }
             }
 
@@ -321,7 +324,7 @@ impl Visitor for CodegenVisitor {
 
                 fn try_from(value: BitSet<#width>)
                     -> Result<Self, Self::Error> {
-                    Self::try_from(value.to_int())
+                    Self::try_from(#repr::from(value))
                         .map_err(|_|
                             rust_rpi::OutOfRange::EnumValueOutOfRange
                         )

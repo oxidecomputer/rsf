@@ -52,12 +52,12 @@ impl PhyConfig {
 }
 impl From<u32> for PhyConfig {
     fn from(value: u32) -> Self {
-        Self(BitSet::<32>::from_int(value).unwrap())
+        Self(BitSet::<32>::try_from(value).unwrap())
     }
 }
 impl From<PhyConfig> for u32 {
     fn from(value: PhyConfig) -> Self {
-        value.0.to_int()
+        u32::from(value.0)
     }
 }
 ///Instance of a [`PhyConfig`]
@@ -123,12 +123,12 @@ impl PhyStatus {
 }
 impl From<u32> for PhyStatus {
     fn from(value: u32) -> Self {
-        Self(BitSet::<32>::from_int(value).unwrap())
+        Self(BitSet::<32>::try_from(value).unwrap())
     }
 }
 impl From<PhyStatus> for u32 {
     fn from(value: PhyStatus) -> Self {
-        value.0.to_int()
+        u32::from(value.0)
     }
 }
 ///Instance of a [`PhyStatus`]
@@ -195,7 +195,7 @@ impl From<Lanes> for BitSet<2> {
 impl TryFrom<BitSet<2>> for Lanes {
     type Error = rust_rpi::OutOfRange;
     fn try_from(value: BitSet<2>) -> Result<Self, Self::Error> {
-        Self::try_from(value.to_int())
+        Self::try_from(u8::from(value))
             .map_err(|_| rust_rpi::OutOfRange::EnumValueOutOfRange)
     }
 }
@@ -254,7 +254,7 @@ pub mod cei {
     impl TryFrom<BitSet<1>> for Modulation {
         type Error = rust_rpi::OutOfRange;
         fn try_from(value: BitSet<1>) -> Result<Self, Self::Error> {
-            Self::try_from(value.to_int())
+            Self::try_from(u8::from(value))
                 .map_err(|_| rust_rpi::OutOfRange::EnumValueOutOfRange)
         }
     }
@@ -289,7 +289,7 @@ pub mod ethernet {
     impl TryFrom<BitSet<3>> for Reach {
         type Error = rust_rpi::OutOfRange;
         fn try_from(value: BitSet<3>) -> Result<Self, Self::Error> {
-            Self::try_from(value.to_int())
+            Self::try_from(u8::from(value))
                 .map_err(|_| rust_rpi::OutOfRange::EnumValueOutOfRange)
         }
     }
@@ -312,7 +312,7 @@ pub mod ethernet {
     impl TryFrom<BitSet<2>> for Fec {
         type Error = rust_rpi::OutOfRange;
         fn try_from(value: BitSet<2>) -> Result<Self, Self::Error> {
-            Self::try_from(value.to_int())
+            Self::try_from(u8::from(value))
                 .map_err(|_| rust_rpi::OutOfRange::EnumValueOutOfRange)
         }
     }
@@ -337,7 +337,7 @@ pub mod ethernet {
     impl TryFrom<BitSet<2>> for DataRate {
         type Error = rust_rpi::OutOfRange;
         fn try_from(value: BitSet<2>) -> Result<Self, Self::Error> {
-            Self::try_from(value.to_int())
+            Self::try_from(u8::from(value))
                 .map_err(|_| rust_rpi::OutOfRange::EnumValueOutOfRange)
         }
     }
