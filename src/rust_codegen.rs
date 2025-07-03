@@ -88,6 +88,9 @@ impl Visitor for CodegenVisitor {
                     }
                 }
                 FieldType::Bitfield { width } => {
+                    if width.value > 64 {
+                        continue;
+                    }
                     let width =
                         proc_macro2::Literal::u128_unsuffixed(width.value);
                     if f.mode == FieldMode::ReadOnly
@@ -168,6 +171,14 @@ impl Visitor for CodegenVisitor {
 
         let doc = reg.doc.join("\n");
         let instance_doc = format!("Instance of a [`{}`]", reg.id.name);
+        let conversion = match reg.width.value {
+            8 | 16 | 32 | 64 => quote! {
+                BitSet::<#width>::from(value)
+            },
+            _ => quote! {
+                BitSet::<#width>::try_from(value).unwrap()
+            },
+        };
 
         self.register_definitions.extend(quote! {
 
@@ -185,7 +196,7 @@ impl Visitor for CodegenVisitor {
             impl From<#value_type> for #name {
                 fn from(value: #value_type) -> Self {
                     //TODO should be fallible
-                    Self(BitSet::<#width>::from_int(value).unwrap())
+                    Self(#conversion)
                 }
             }
 
@@ -193,7 +204,7 @@ impl Visitor for CodegenVisitor {
                 fn from(value: #name) -> Self {
                     //TODO it's not obvious without looking here that value_type
                     // should be an integer of some kind
-                    value.0.to_int()
+                    #value_type::from(value.0)
                 }
             }
 
@@ -301,7 +312,14 @@ impl Visitor for CodegenVisitor {
         }
 
         let width = proc_macro2::Literal::u128_unsuffixed(e.width.value);
-
+        let conversion = match e.width.value {
+            8 | 16 | 32 | 64 => quote! {
+                BitSet::<#width>::from(value as #repr)
+            },
+            _ => quote! {
+                BitSet::<#width>::try_from(value as #repr).unwrap()
+            },
+        };
         self.enum_definitions.extend(quote! {
             #[doc = #doc]
             #[derive(num_enum::TryFromPrimitive, PartialEq, Debug)]
@@ -312,7 +330,7 @@ impl Visitor for CodegenVisitor {
 
             impl From<#name> for BitSet<#width> {
                 fn from(value: #name) -> BitSet<#width> {
-                    BitSet::<#width>::try_from(value as #repr).unwrap()
+                    #conversion
                 }
             }
 
@@ -321,7 +339,7 @@ impl Visitor for CodegenVisitor {
 
                 fn try_from(value: BitSet<#width>)
                     -> Result<Self, Self::Error> {
-                    Self::try_from(value.to_int())
+                    Self::try_from(#repr::from(value))
                         .map_err(|_|
                             rust_rpi::OutOfRange::EnumValueOutOfRange
                         )

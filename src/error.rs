@@ -11,4 +11,8 @@ pub enum OutOfRange {
     /// length of the array.
     #[error("Enum value out of range")]
     IndexOutOfRange,
+
+    /// The supplied byte array will not fit into the register
+    #[error("Byte array too large")]
+    ArrayTooLarge,
 }
