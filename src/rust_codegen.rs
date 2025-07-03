@@ -304,7 +304,14 @@ impl Visitor for CodegenVisitor {
         }
 
         let width = proc_macro2::Literal::u128_unsuffixed(e.width.value);
-
+        let conversion = match e.width.value {
+            8 | 16 | 32 | 64 => quote! {
+                BitSet::<#width>::from(value as #repr)
+            },
+            _ => quote! {
+                BitSet::<#width>::try_from(value as #repr).unwrap()
+            },
+        };
         self.enum_definitions.extend(quote! {
             #[doc = #doc]
             #[derive(num_enum::TryFromPrimitive, PartialEq, Debug)]
@@ -315,7 +322,7 @@ impl Visitor for CodegenVisitor {
 
             impl From<#name> for BitSet<#width> {
                 fn from(value: #name) -> BitSet<#width> {
-                    BitSet::<#width>::try_from(value as #repr).unwrap()
+                    #conversion
                 }
             }
 
