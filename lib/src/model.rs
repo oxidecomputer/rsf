@@ -1006,7 +1006,7 @@ mod test {
 
     #[test]
     fn nic_example_resolve() {
-        let ast = match parse("examples/nic.rsf".into()) {
+        let ast = match parse("../examples/nic.rsf".into()) {
             Ok(ast) => ast,
             Err(ref e) => {
                 panic!("parsing failed: {e}");
@@ -1174,7 +1174,7 @@ mod test {
 
     #[test]
     fn register_lookup_visitor() {
-        let ast = match parse("examples/nic.rsf".into()) {
+        let ast = match parse("../examples/nic.rsf".into()) {
             Ok(ast) => ast,
             Err(ref e) => {
                 panic!("parsing failed: {e}");

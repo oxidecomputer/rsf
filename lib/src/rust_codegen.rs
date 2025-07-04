@@ -692,7 +692,7 @@ pub fn generate_rpi_rec(
 fn use_statements() -> TokenStream {
     let tokens = quote! {
         use bitset::BitSet;
-        use rsf::rust_rpi;
+        use rust_rpi;
     };
     tokens
 }

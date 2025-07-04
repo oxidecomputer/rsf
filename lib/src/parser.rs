@@ -506,7 +506,7 @@ mod test {
 
     #[test]
     fn nic_example_parse() {
-        let text = std::fs::read_to_string("examples/nic.rsf").unwrap();
+        let text = std::fs::read_to_string("../examples/nic.rsf").unwrap();
         let s = Input::new(text.as_str());
         let ast = match parse_ast.parse(s) {
             Ok(ast) => ast,
