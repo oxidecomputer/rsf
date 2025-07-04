@@ -1,9 +1,14 @@
-[package]
-name = "rsf"
+[workspace]
+resolver = "2"
+
+members = ["lib", "rust_rpi"]
+default_members = ["lib", "rust_rpi"]
+
+[workspace.package]
 version = "0.1.0"
 edition = "2024"
 
-[dependencies]
+[workspace.dependencies]
 anyhow = "1.0.98"
 camino = "1.1.9"
 camino-tempfile = "1.3.0"
@@ -14,17 +19,10 @@ prettyplease = "0.2"
 num_enum = "0.7.3"
 proc-macro2 = "1.0.95"
 quote = "1.0.40"
-expectorate = "1.1"
 convert_case = "0.8.0"
 bitset = { git = "https://github.com/oxidecomputer/bitset" }
 bitset-macro = { git = "https://github.com/oxidecomputer/bitset" }
 thiserror = "2.0.12"
 petgraph = "0.8.2"
 clap = { version = "4.5.40", features = ["derive"] }
-
-[dev-dependencies]
 expectorate = "1.1.0"
-
-[features]
-default = ["test_generated"]
-test_generated = []

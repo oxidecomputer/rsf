@@ -32,7 +32,7 @@ mod generated {
 #[test]
 fn run_generated_code() -> anyhow::Result<()> {
     use generated::*;
-    use rsf::rust_rpi::{DummyPlatform, RegisterInstance};
+    use rust_rpi::{DummyPlatform, RegisterInstance};
 
     // Initialize the underlying platform. For testing this is just a
     // dummy platform.
