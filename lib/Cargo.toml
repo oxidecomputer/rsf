@@ -1,0 +1,31 @@
+[package]
+name = "rsf"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+anyhow.workspace = true
+camino.workspace = true
+camino-tempfile.workspace = true
+colored.workspace = true
+winnow.workspace = true
+syn.workspace = true
+prettyplease.workspace = true
+num_enum.workspace = true
+proc-macro2.workspace = true
+quote.workspace = true
+expectorate.workspace = true
+convert_case.workspace = true
+bitset.workspace = true
+bitset-macro.workspace = true
+thiserror.workspace = true
+petgraph.workspace = true
+clap.workspace = true
+
+[dev-dependencies]
+expectorate.workspace = true
+
+[features]
+default = ["test_generated"]
+test_generated = []
+
