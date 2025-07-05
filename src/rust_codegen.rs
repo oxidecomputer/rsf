@@ -64,19 +64,13 @@ impl CodegenVisitor {
 
         self.register_definitions.extend(quote! {
 
-            #[derive(Debug)]
+            #[derive(Debug, Default)]
             #[doc = #doc]
             pub struct #name([u8; #width]);
 
             #[doc = #instance_doc]
             pub struct #instance_name {
                 pub msel_id: u32,
-            }
-
-            impl Default for #name {
-                fn default() -> Self {
-                    Self([0; #width])
-                }
             }
         })
     }
