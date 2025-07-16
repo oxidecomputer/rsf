@@ -77,7 +77,16 @@ impl Emit for Register {
         for x in &self.doc {
             writeln!(f, "///{x}")?;
         }
-        writeln!(f, "register<{}> {} {{", self.width.to_code(), self.id.name)?;
+        writeln!(
+            f,
+            "{}register<{}> {} {{",
+            match self.sram {
+                true => "sram ",
+                false => "",
+            },
+            self.width.to_code(),
+            self.id.name
+        )?;
         for x in &self.fields {
             x.emit(f)?;
         }
@@ -129,7 +138,15 @@ impl Emit for Block {
         for x in &self.doc {
             writeln!(f, "///{x}")?;
         }
-        writeln!(f, "block {} {{", self.id.name)?;
+        writeln!(
+            f,
+            "{}block {} {{",
+            match self.sram {
+                true => "sram ",
+                false => "",
+            },
+            self.id.name,
+        )?;
         for x in &self.elements {
             x.emit(f)?;
         }

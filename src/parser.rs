@@ -165,9 +165,11 @@ pub fn parse_reg_top(input: &mut Input) -> ModalResult<Top> {
 
 pub fn parse_reg(input: &mut Input) -> ModalResult<Register> {
     let doc = doc_comment_parser.parse_next(input)?;
+    let sram = token("sram").parse_next(input).is_ok();
     token("register").parse_next(input)?;
     let mut reg = cut_err(parse_reg_cut).parse_next(input)?;
     reg.doc = doc;
+    reg.sram = sram;
     Ok(reg)
 }
 
@@ -183,6 +185,7 @@ pub fn parse_reg_cut(input: &mut Input) -> ModalResult<Register> {
         doc: Vec::default(),
         id,
         width,
+        sram: false,
         fields,
     })
 }
@@ -281,14 +284,17 @@ pub fn parse_block_top(input: &mut Input) -> ModalResult<Top> {
 
 pub fn parse_block(input: &mut Input) -> ModalResult<Block> {
     let doc = doc_comment_parser.parse_next(input)?;
+    let sram = token("sram").parse_next(input).is_ok();
     token("block").parse_next(input)?;
     let mut blk = cut_err(parse_block_cut).parse_next(input)?;
     blk.doc = doc;
+    blk.sram = sram;
     Ok(blk)
 }
 
 pub fn parse_block_cut(input: &mut Input) -> ModalResult<Block> {
     let id = identifier_parser.parse_next(input)?;
+
     token("{").parse_next(input)?;
     let elements =
         separated(0.., block_element_parser, token(",")).parse_next(input)?;
@@ -298,6 +304,7 @@ pub fn parse_block_cut(input: &mut Input) -> ModalResult<Block> {
     Ok(Block {
         doc: Vec::default(),
         id,
+        sram: false,
         elements,
     })
 }
@@ -491,7 +498,7 @@ mod test {
         assert_eq!(ast.enums[0].alternatives[3].id.name, "F2");
         assert_eq!(ast.enums[0].alternatives[4].id.name, "F4");
 
-        assert_eq!(ast.registers.len(), 2);
+        assert_eq!(ast.registers.len(), 4);
         assert_eq!(ast.registers[0].id.name, "PhyConfig");
         assert_eq!(ast.registers[0].width.value, 32);
         assert_eq!(ast.registers[0].fields.len(), 5);
@@ -549,7 +556,7 @@ mod test {
         assert_eq!(ast.registers[1].fields[2].typ, FieldType::Bool);
 
         assert_eq!(ast.blocks[0].id.name, "Main");
-        assert_eq!(ast.blocks[0].elements.len(), 1);
+        assert_eq!(ast.blocks[0].elements.len(), 2);
         assert_eq!(
             ast.blocks[0].elements[0].component,
             Component::Array {
@@ -576,7 +583,7 @@ mod test {
             },
         );
 
-        assert_eq!(ast.blocks.len(), 2);
+        assert_eq!(ast.blocks.len(), 3);
         assert_eq!(ast.blocks[1].id.name, "Phy");
         assert_eq!(ast.blocks[1].elements.len(), 2);
         assert_eq!(

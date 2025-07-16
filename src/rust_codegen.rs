@@ -23,7 +23,6 @@ struct CodegenVisitor {
     enum_definitions: TokenStream,
     block_definitions: TokenStream,
     block_methods: BTreeMap<String, TokenStream>,
-    current_block: String,
 }
 
 impl CodegenVisitor {
@@ -48,10 +47,40 @@ impl CodegenVisitor {
         }
         tokens
     }
+
+    // Todo: the SRAM interface needs to be fleshed out as we get more
+    // experience with both the consumers of the API and the underlying
+    // mechanism.  For now, we simply provide enough functionality to
+    // locate the data in SRAM and instantiate an instance in memory.
+    fn sram(&mut self, reg: Arc<Register>) {
+        let name = format_ident!("{}", reg.id.name.to_case(Case::Pascal));
+        let width = proc_macro2::Literal::u128_unsuffixed(reg.width.value);
+
+        let instance_name =
+            format_ident!("{}Instance", reg.id.name.to_case(Case::Pascal));
+
+        let doc = reg.doc.join("\n");
+        let instance_doc = format!("Instance of a [`{}`]", reg.id.name);
+
+        self.register_definitions.extend(quote! {
+
+            #[derive(Debug, Default)]
+            #[doc = #doc]
+            pub struct #name([u8; #width]);
+
+            #[doc = #instance_doc]
+            pub struct #instance_name {
+                pub msel_id: u32,
+            }
+        })
+    }
 }
 
 impl Visitor for CodegenVisitor {
     fn register(&mut self, reg: Arc<Register>) {
+        if reg.sram {
+            return self.sram(reg);
+        }
         let name = format_ident!("{}", reg.id.name.to_case(Case::Pascal));
         let width = proc_macro2::Literal::u128_unsuffixed(reg.width.value);
         let mut fields = TokenStream::default();
@@ -340,7 +369,7 @@ impl Visitor for CodegenVisitor {
             ),
         };
 
-        self.current_block = name.to_owned();
+        let current_block = name.to_owned();
 
         let addr_type = &self.addr_type;
         let doc = block.doc.join("\n");
@@ -353,14 +382,23 @@ impl Visitor for CodegenVisitor {
             }
         });
 
-        for element in &block.elements {
+        let mut elements = block.elements.clone();
+        elements.sort_by(|a, b| a.offset.value.cmp(&b.offset.value));
+        for (idx, element) in elements.iter().enumerate() {
             let doc = element.doc.join("\n");
             let mut tokens = self
                 .block_methods
-                .get(&self.current_block)
+                .get(&current_block)
                 .cloned()
                 .unwrap_or_default();
 
+            // SRAM memory is accessed indirectly and is addressed using a
+            // "memory selector ID".  The IDs are assigned in offset order, but
+            // can't be calculated directly from the offset.  Thus, we ensure
+            // the elements are sorted above, and build the msel_id from the
+            // index here.
+            let msel_id =
+                proc_macro2::Literal::from_str(&format!("{idx}")).unwrap();
             let offset = proc_macro2::Literal::from_str(&format!(
                 "0x{:x}",
                 element.offset.value
@@ -373,16 +411,26 @@ impl Visitor for CodegenVisitor {
                         format_ident!("{}", id.name.to_case(Case::Snake));
                     let type_name =
                         typename_to_qualified_ident(typ, "Instance");
-                    tokens.extend(quote! {
-                        #[doc = #doc]
-                        pub fn #method_name(&self) -> #type_name {
-                            #type_name {
-                                addr: self.addr + #offset,
+                    if block.sram {
+                        tokens.extend(quote! {
+                            #[doc = #doc]
+                            pub fn #method_name(&self) -> #type_name {
+                                #type_name {
+                                    msel_id: #msel_id,
+                                }
                             }
-                        }
-                    });
-                    self.block_methods
-                        .insert(self.current_block.clone(), tokens);
+                        });
+                    } else {
+                        tokens.extend(quote! {
+                            #[doc = #doc]
+                            pub fn #method_name(&self) -> #type_name {
+                                #type_name {
+                                    addr: self.addr + #offset,
+                                }
+                            }
+                        });
+                    }
+                    self.block_methods.insert(current_block.clone(), tokens);
                 }
                 Component::Array {
                     id,
@@ -401,7 +449,17 @@ impl Visitor for CodegenVisitor {
                     .unwrap();
                     let length =
                         proc_macro2::Literal::u128_unsuffixed(length.value);
-                    tokens.extend(quote! {
+                    if block.sram {
+                        tokens.extend(quote! {
+                        #[doc = #doc]
+                            pub fn #method_name(&self) -> #type_name {
+                                #type_name {
+                                    msel_id: #msel_id,
+                                }
+                            }
+                        })
+                    } else {
+                        tokens.extend(quote! {
                         #[doc = #doc]
                         pub fn #method_name(&self, index: #addr_type)
                             -> Result<#type_name, rust_rpi::OutOfRange> {
@@ -413,8 +471,8 @@ impl Visitor for CodegenVisitor {
                             })
                         }
                     });
-                    self.block_methods
-                        .insert(self.current_block.clone(), tokens);
+                    }
+                    self.block_methods.insert(current_block.clone(), tokens);
                 }
             }
         }
@@ -424,15 +482,10 @@ impl Visitor for CodegenVisitor {
         &mut self,
         _id: &crate::ast::Identifier,
         _path: &[crate::ast::Identifier],
-        block: Arc<Block>,
+        _block: Arc<Block>,
         _array_index: Option<u128>,
         _addr: u128,
     ) -> bool {
-        let name = match block.id.name.as_str() {
-            "Main" => "Client",
-            other => other,
-        };
-        self.current_block = name.to_owned();
         true
     }
 }
@@ -527,6 +580,7 @@ pub fn generate_rpi_rec(
         prelude: use_statements(),
         ..Default::default()
     };
+
     model.root.accept(&mut cgv);
     let mut tokens = cgv.tokens();
 

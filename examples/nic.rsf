@@ -5,6 +5,8 @@ use cei;
 block Main {
     /// A block for each of the four phys.
     phys: Phy[4; 0x1000] @ 0x6000,
+    /// The NIC's firmware.
+    firmware: Firmware @ 0x10000,
 }
 
 /// Phy registers.
@@ -13,6 +15,14 @@ block Phy {
     config: PhyConfig @ 0x200,
     /// Status register.
     status: PhyStatus @ 0x400,
+}
+
+/// Firmware block
+sram block Firmware {
+    /// Metadata section of firmware
+    metadata: Metadata[64; 0x20] @ 0x0,
+    /// Instruction section of firmware
+    instructions: FirmwareInstruction[1024; 0x40] @ 0x800,
 }
 
 /// Number of lanes per phy.
@@ -53,4 +63,16 @@ register<32> PhyStatus {
     signal_error: ro bool @ 1,
     /// Indicates that data in the signal received from the MAU is valid.
     data_valid: ro bool @ 2,
+}
+
+/// Metadata value
+sram register<32> Metadata {
+    /// Metadata values are 32 bit integers
+    value: rw b32 @ 0x0,
+}
+
+/// Firmware instruction
+sram register<32> FirmwareInstruction {
+    /// Firmware instructions are 64 bit values
+    value: rw b32 @ 0x0,
 }

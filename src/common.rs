@@ -97,6 +97,7 @@ pub struct Register<T> {
     pub doc: Vec<String>,
     pub id: Identifier,
     pub width: Number,
+    pub sram: bool,
     pub fields: Vec<Field<T>>,
 }
 
@@ -104,6 +105,7 @@ pub struct Register<T> {
 pub struct Block<T> {
     pub doc: Vec<String>,
     pub id: Identifier,
+    pub sram: bool,
     pub elements: Vec<BlockElement<T>>,
 }
 
