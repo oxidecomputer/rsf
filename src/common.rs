@@ -3,7 +3,7 @@ use std::{fmt::Display, ops::Range};
 
 use crate::ast::Emit;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Enum {
     pub doc: Vec<String>,
     pub id: Identifier,
@@ -25,7 +25,7 @@ impl Emit for Enum {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Alternative {
     pub doc: Vec<String>,
     pub id: Identifier,
@@ -83,7 +83,7 @@ impl Display for FieldMode {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Field<T> {
     pub doc: Vec<String>,
     pub id: Identifier,
@@ -92,7 +92,7 @@ pub struct Field<T> {
     pub offset: Number,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Register<T> {
     pub doc: Vec<String>,
     pub id: Identifier,
@@ -101,7 +101,7 @@ pub struct Register<T> {
     pub fields: Vec<Field<T>>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Block<T> {
     pub doc: Vec<String>,
     pub id: Identifier,
@@ -109,7 +109,7 @@ pub struct Block<T> {
     pub elements: Vec<BlockElement<T>>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct BlockElement<T> {
     pub doc: Vec<String>,
     pub component: Component<T>,

@@ -2,6 +2,8 @@
 //!
 //! https://standards.ieee.org
 
+use version;
+
 /// Reach of a signal.
 enum<3> Reach {
 	/// Backplane reach.
@@ -40,4 +42,13 @@ enum<2> DataRate {
 	G200 = 0b10,
 	/// 400 Gigabites per second.
 	G400 = 0b11,
+}
+
+/// Test block
+///
+/// This block isn't referenced anywhere.  It exists simply to exercise the
+/// importation of a shared subblock (i.e., "version") at multiple levels.
+block Test {
+    /// version info
+    version: version::VersionInfo @ 0x000,
 }

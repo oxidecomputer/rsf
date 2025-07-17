@@ -1,5 +1,6 @@
 use ethernet;
 use cei;
+use version;
 
 /// Register programming interface for this NIC.
 block Main {
@@ -7,6 +8,8 @@ block Main {
     phys: Phy[4; 0x1000] @ 0x6000,
     /// The NIC's firmware.
     firmware: Firmware @ 0x10000,
+    /// The NIC's version info
+    version: version::VersionInfo @ 0x100,
 }
 
 /// Phy registers.
@@ -15,6 +18,8 @@ block Phy {
     config: PhyConfig @ 0x200,
     /// Status register.
     status: PhyStatus @ 0x400,
+    /// The Phy's version info
+    version: version::VersionInfo @ 0x000,
 }
 
 /// Firmware block

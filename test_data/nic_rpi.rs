@@ -229,6 +229,12 @@ pub struct Client {
     pub addr: u32,
 }
 impl Client {
+    /// The NIC's version info
+    pub fn version(&self) -> version::VersionInfoInstance {
+        version::VersionInfoInstance {
+            addr: self.addr + 0x100,
+        }
+    }
     /// A block for each of the four phys.
     pub fn phys(&self, index: u32) -> Result<PhyInstance, rust_rpi::OutOfRange> {
         if index > 4 {
@@ -258,6 +264,12 @@ impl FirmwareInstance {
     }
 }
 impl PhyInstance {
+    /// The Phy's version info
+    pub fn version(&self) -> version::VersionInfoInstance {
+        version::VersionInfoInstance {
+            addr: self.addr,
+        }
+    }
     /// Configuration register.
     pub fn config(&self) -> PhyConfigInstance {
         PhyConfigInstance {
@@ -297,6 +309,7 @@ pub mod cei {
     }
 }
 pub mod ethernet {
+    use super::version;
     use bitset::BitSet;
     use rsf::rust_rpi;
     /// Reach of a signal.
@@ -376,6 +389,100 @@ pub mod ethernet {
         fn try_from(value: BitSet<2>) -> Result<Self, Self::Error> {
             Self::try_from(u8::from(value))
                 .map_err(|_| rust_rpi::OutOfRange::EnumValueOutOfRange)
+        }
+    }
+    /** Test block
+
+ This block isn't referenced anywhere.  It exists simply to exercise the
+ importation of a shared subblock (i.e., "version") at multiple levels.*/
+    #[derive(Default, Debug)]
+    pub struct TestInstance {
+        pub addr: u32,
+    }
+    impl TestInstance {
+        /// version info
+        pub fn version(&self) -> version::VersionInfoInstance {
+            version::VersionInfoInstance {
+                addr: self.addr,
+            }
+        }
+    }
+}
+pub mod version {
+    use bitset::BitSet;
+    use rsf::rust_rpi;
+    #[derive(Default, Debug)]
+    /// Version number
+    pub struct Version(BitSet<32>);
+    impl Version {
+        /// Version number
+        pub fn get_value(&self) -> BitSet<32> {
+            self.0.get_field::<32, 0>().unwrap()
+        }
+        pub fn reset(&mut self) {
+            self.0 = BitSet::<32>::ZERO;
+        }
+    }
+    impl From<u32> for Version {
+        fn from(value: u32) -> Self {
+            Self(BitSet::<32>::from(value))
+        }
+    }
+    impl From<Version> for u32 {
+        fn from(value: Version) -> Self {
+            u32::from(value.0)
+        }
+    }
+    ///Instance of a [`Version`]
+    pub struct VersionInstance {
+        pub addr: u32,
+    }
+    impl rust_rpi::RegisterInstance<Version, u32, u32> for VersionInstance {
+        fn cons(&self) -> Version {
+            let mut v = Version::default();
+            v.reset();
+            v
+        }
+        fn read<P: rust_rpi::Platform<u32, u32>>(
+            &self,
+            platform: &P,
+        ) -> Result<Version, P::Error> {
+            platform.read(self.addr)
+        }
+        fn write<P: rust_rpi::Platform<u32, u32>>(
+            &self,
+            platform: &P,
+            value: Version,
+        ) -> Result<(), P::Error> {
+            platform.write(self.addr, value)
+        }
+        fn try_update<
+            P: rust_rpi::Platform<u32, u32>,
+            F: FnOnce(&mut Version) -> Result<(), P::Error>,
+        >(&self, platform: &P, f: F) -> Result<(), P::Error> {
+            let mut value = self.read(platform)?;
+            f(&mut value)?;
+            self.write(platform, value)
+        }
+        fn update<P: rust_rpi::Platform<u32, u32>, F: FnOnce(&mut Version)>(
+            &self,
+            platform: &P,
+            f: F,
+        ) -> Result<(), P::Error> {
+            let mut value = self.read(platform)?;
+            f(&mut value);
+            self.write(platform, value)
+        }
+    }
+    /// Component version info
+    #[derive(Default, Debug)]
+    pub struct VersionInfoInstance {
+        pub addr: u32,
+    }
+    impl VersionInfoInstance {
+        /// Version register.
+        pub fn version(&self) -> VersionInstance {
+            VersionInstance { addr: self.addr }
         }
     }
 }

@@ -34,13 +34,13 @@ impl FieldType {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum ComponentUserType {
     Register(Arc<Register>),
     Block(Arc<Block>),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum FieldUserType {
     Enum(Arc<Enum>),
 }
@@ -70,7 +70,7 @@ impl Typename for ComponentUserType {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Model {
     pub id: String,
     pub enums: Vec<Arc<Enum>>,
@@ -78,19 +78,19 @@ pub struct Model {
     pub blocks: Vec<Arc<Block>>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ModelModules {
     pub root: Model,
     pub used: BTreeMap<String, ModelModules>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct QualifiedComponentType {
     pub module_path: Vec<Model>,
     pub typ: ComponentUserType,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct QualifiedFieldType {
     pub module_path: Vec<Model>,
     pub typ: FieldUserType,
@@ -672,6 +672,29 @@ impl ModelModules {
         }
     }
 
+    /// Walk the full model, returning a BTreeMap containing all of the unique
+    /// models within it.  If we discover two models with identical names but
+    /// different contents, an error will be returned.
+    pub fn get_modules(&self) -> Result<BTreeMap<String, ModelModules>> {
+        let mut mods = BTreeMap::new();
+
+        mods.insert(self.root.id.to_string(), self.clone());
+        for (name, m) in &self.used {
+            mods.insert(name.to_string(), m.clone());
+            for (modname, module) in m.get_modules()? {
+                if let Some(old) = mods.insert(modname.clone(), module.clone())
+                    && old != module
+                {
+                    return Err(anyhow!(
+                        "Found conflicting definition for {modname}"
+                    ));
+                }
+            }
+        }
+
+        Ok(mods)
+    }
+
     #[allow(dead_code)]
     fn check(&self) -> Result<()> {
         self.check_main_block()?;
@@ -897,6 +920,27 @@ mod test {
         assert_eq!(offset, block_element.offset.value)
     }
 
+    fn check_block_block_single_component(
+        block_element: &BlockElement,
+        name: &str,
+        type_path: &[&str],
+        typename: &str,
+        offset: u128,
+    ) {
+        let Component::Single { id, typ } = &block_element.component else {
+            panic!("expected single component");
+        };
+        assert_eq!(id.name, name);
+        for (i, p) in type_path.iter().enumerate() {
+            assert_eq!(&typ.module_path[i].id, p);
+        }
+        let ComponentUserType::Block(b) = &typ.typ else {
+            panic!("expected block component");
+        };
+        assert_eq!(typename, b.id.name);
+        assert_eq!(offset, block_element.offset.value);
+    }
+
     fn check_block_block_array_component(
         block_element: &BlockElement,
         name: &str,
@@ -982,7 +1026,7 @@ mod test {
         // After parsing the nic.rsf file, we expect the blocks to be:
         //   0: Phy  1: Firmware  2: Main
         // and the registers to be:
-        //    0: PhyConfig  1: PhyStatus  2: Metadata  3: FirmwareInstruction
+        //   0: PhyConfig  1: PhyStatus  2: Metadata  3: FirmwareInstruction
         let phy_cfg = &resolved.root.registers[0];
         let phy_status = &resolved.root.registers[1];
         let metadata = &resolved.root.registers[2];
@@ -1110,6 +1154,20 @@ mod test {
             4,
             0x1000,
             0x6000,
+        );
+        check_block_block_single_component(
+            &main.elements[1],
+            "firmware",
+            &[],
+            "Firmware",
+            0x10000,
+        );
+        check_block_block_single_component(
+            &main.elements[2],
+            "version",
+            &[],
+            "VersionInfo",
+            0x100,
         );
     }
 
