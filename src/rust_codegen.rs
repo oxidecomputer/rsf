@@ -417,11 +417,14 @@ impl Visitor for CodegenVisitor {
             // index here.
             let msel_id =
                 proc_macro2::Literal::from_str(&format!("{idx}")).unwrap();
-            let offset = proc_macro2::Literal::from_str(&format!(
-                "0x{:x}",
-                element.offset.value
-            ))
-            .unwrap();
+            let offset = match element.offset.value {
+                0 => TokenStream::new(),
+                x => {
+                    let v = proc_macro2::Literal::from_str(&format!("0x{x:x}"))
+                        .unwrap();
+                    quote!( + #v )
+                }
+            };
 
             match &element.component {
                 Component::Single { id, typ } => {
@@ -443,7 +446,7 @@ impl Visitor for CodegenVisitor {
                             #[doc = #doc]
                             pub fn #method_name(&self) -> #type_name {
                                 #type_name {
-                                    addr: self.addr + #offset,
+                                    addr: self.addr #offset,
                                 }
                             }
                         });
@@ -485,7 +488,7 @@ impl Visitor for CodegenVisitor {
                                 return Err(rust_rpi::OutOfRange::IndexOutOfRange);
                             }
                             Ok(#type_name {
-                                addr: self.addr + #offset + (index * #spacing)
+                                addr: self.addr #offset + (index * #spacing)
                             })
                         }
                     });
@@ -557,15 +560,27 @@ pub fn codegen(
 ) -> Result<String> {
     let ast = crate::parser::parse(file)?;
     let resolved = ModelModules::resolve(&ast, String::default())?;
-    generate_rpi(&resolved, addr_type.into(), value_type.into())
+    let modules = resolved.get_modules()?;
+    generate_rpi(&modules, addr_type.into(), value_type.into())
 }
 
 pub fn generate_rpi(
-    model: &ModelModules,
+    modules: &BTreeMap<String, ModelModules>,
     addr_type: TokenStream,
     value_type: TokenStream,
 ) -> Result<String> {
-    let tokens = generate_rpi_rec(model, addr_type, value_type)?;
+    let mut tokens = TokenStream::new();
+    for (name, module) in modules {
+        let model_tokens = generate_rpi_rec(
+            name.to_string(),
+            module,
+            addr_type.clone(),
+            value_type.clone(),
+        )?;
+        tokens.extend(quote! {
+            #model_tokens
+        });
+    }
 
     let file: syn::File = syn::parse2(tokens.clone()).map_err(|e| {
         let generated = tokens
@@ -588,6 +603,7 @@ pub fn generate_rpi(
 }
 
 pub fn generate_rpi_rec(
+    name: String,
     model: &ModelModules,
     addr_type: TokenStream,
     value_type: TokenStream,
@@ -602,15 +618,25 @@ pub fn generate_rpi_rec(
     model.root.accept(&mut cgv);
     let mut tokens = cgv.tokens();
 
-    for (name, module) in &model.used {
-        let model_tokens =
-            generate_rpi_rec(module, addr_type.clone(), value_type.clone())?;
+    // If the name is not empty, then we are generating code for a module.  We
+    // need to build the module definition and the "use" instructions for all
+    // other modules being imported.
+    if !name.is_empty() {
+        let mut mod_tokens = TokenStream::new();
+        let mut import_tokens = TokenStream::new();
+
+        for name in model.used.keys() {
+            let import_name = format_ident!("{}", name.to_case(Case::Snake));
+            import_tokens.extend(quote! { use super::#import_name; });
+        }
         let modname = format_ident!("{}", name.to_case(Case::Snake));
-        tokens.extend(quote! {
+        mod_tokens.extend(quote! {
             pub mod #modname {
-                #model_tokens
+                #import_tokens
+                #tokens
             }
-        })
+        });
+        tokens = mod_tokens;
     }
 
     Ok(tokens)

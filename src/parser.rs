@@ -484,9 +484,10 @@ mod test {
                 panic!("parsing failed: {e}");
             }
         };
-        assert_eq!(ast.use_statements.len(), 2);
+        assert_eq!(ast.use_statements.len(), 3);
         assert_eq!(ast.use_statements[0].module.name, "ethernet");
         assert_eq!(ast.use_statements[1].module.name, "cei");
+        assert_eq!(ast.use_statements[2].module.name, "version");
 
         assert_eq!(ast.enums.len(), 1);
         assert_eq!(ast.enums[0].id.name, "Lanes");
@@ -556,7 +557,7 @@ mod test {
         assert_eq!(ast.registers[1].fields[2].typ, FieldType::Bool);
 
         assert_eq!(ast.blocks[0].id.name, "Main");
-        assert_eq!(ast.blocks[0].elements.len(), 2);
+        assert_eq!(ast.blocks[0].elements.len(), 3);
         assert_eq!(
             ast.blocks[0].elements[0].component,
             Component::Array {
@@ -585,7 +586,7 @@ mod test {
 
         assert_eq!(ast.blocks.len(), 3);
         assert_eq!(ast.blocks[1].id.name, "Phy");
-        assert_eq!(ast.blocks[1].elements.len(), 2);
+        assert_eq!(ast.blocks[1].elements.len(), 3);
         assert_eq!(
             ast.blocks[1].elements[0].component,
             Component::Single {
