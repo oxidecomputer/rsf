@@ -186,6 +186,73 @@ pub struct FirmwareInstruction([u8; 32]);
 pub struct FirmwareInstructionInstance {
     pub msel_id: u32,
 }
+#[derive(Default, Debug)]
+/// Debug register to exercise the reset value
+pub struct Debug(BitSet<32>);
+impl Debug {
+    /// debug field
+    pub fn get_value(&self) -> BitSet<32> {
+        self.0.get_field::<32, 0>().unwrap()
+    }
+    /// debug field
+    pub fn set_value(&mut self, data__: BitSet<32>) {
+        self.0.set_field::<32, 0>(data__).unwrap();
+    }
+    pub fn reset(&mut self) {
+        self.0 = BitSet::<32>::from(4294967295u32);
+    }
+}
+impl From<u32> for Debug {
+    fn from(value: u32) -> Self {
+        Self(BitSet::<32>::from(value))
+    }
+}
+impl From<Debug> for u32 {
+    fn from(value: Debug) -> Self {
+        u32::from(value.0)
+    }
+}
+///Instance of a [`Debug`]
+pub struct DebugInstance {
+    pub addr: u32,
+}
+impl rust_rpi::RegisterInstance<Debug, u32, u32> for DebugInstance {
+    fn cons(&self) -> Debug {
+        let mut v = Debug::default();
+        v.reset();
+        v
+    }
+    fn read<P: rust_rpi::Platform<u32, u32>>(
+        &self,
+        platform: &P,
+    ) -> Result<Debug, P::Error> {
+        platform.read(self.addr)
+    }
+    fn write<P: rust_rpi::Platform<u32, u32>>(
+        &self,
+        platform: &P,
+        value: Debug,
+    ) -> Result<(), P::Error> {
+        platform.write(self.addr, value)
+    }
+    fn try_update<
+        P: rust_rpi::Platform<u32, u32>,
+        F: FnOnce(&mut Debug) -> Result<(), P::Error>,
+    >(&self, platform: &P, f: F) -> Result<(), P::Error> {
+        let mut value = self.read(platform)?;
+        f(&mut value)?;
+        self.write(platform, value)
+    }
+    fn update<P: rust_rpi::Platform<u32, u32>, F: FnOnce(&mut Debug)>(
+        &self,
+        platform: &P,
+        f: F,
+    ) -> Result<(), P::Error> {
+        let mut value = self.read(platform)?;
+        f(&mut value);
+        self.write(platform, value)
+    }
+}
 /// Number of lanes per phy.
 #[derive(num_enum::TryFromPrimitive, PartialEq, Debug)]
 #[repr(u8)]
@@ -268,6 +335,12 @@ impl PhyInstance {
     pub fn version(&self) -> version::VersionInfoInstance {
         version::VersionInfoInstance {
             addr: self.addr,
+        }
+    }
+    /// test register.
+    pub fn debug(&self) -> DebugInstance {
+        DebugInstance {
+            addr: self.addr + 0x10,
         }
     }
     /// Configuration register.
