@@ -1,6 +1,7 @@
 //! Rust register programming interface (RPI)
 #![no_std]
 
+#[derive(Debug)]
 pub enum OutOfRange {
     /// Conversion from integer type to an enumeration from a value that is
     /// too large for the enum.

@@ -217,6 +217,7 @@ impl Emit for Ast {
 }
 
 /// A set of ASTs indexed by module name
+#[derive(Debug)]
 pub struct AstModules {
     pub root: Ast,
     pub used: BTreeMap<String, AstModules>,
