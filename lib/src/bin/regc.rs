@@ -18,10 +18,18 @@ fn main() {
         }
     };
 
-    let _resolved = match ModelModules::resolve(&ast, String::default()) {
+    let resolved = match ModelModules::resolve(&ast, String::default()) {
         Ok(resolved) => resolved,
         Err(e) => {
             eprintln!("resolve error: {e}");
+            std::process::exit(1);
+        }
+    };
+
+    let _modules = match resolved.get_modules() {
+        Ok(modules) => modules,
+        Err(e) => {
+            eprintln!("failed to get resolved modules: {e}");
             std::process::exit(1);
         }
     };

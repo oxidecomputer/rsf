@@ -157,9 +157,9 @@ impl Visitor for CodegenVisitor {
                         let mut parts = id
                             .module_path
                             .iter()
-                            .filter(|x| !x.id.is_empty())
+                            .filter(|x| !x.is_empty())
                             .map(|x| {
-                                format_ident!("{}", x.id.to_case(Case::Snake))
+                                format_ident!("{}", x.to_case(Case::Snake))
                             })
                             .collect::<Vec<_>>();
                         parts.push(format_ident!(
@@ -266,7 +266,7 @@ impl Visitor for CodegenVisitor {
                 fn cons(&self) -> #name {
                     let mut v = #name::default();
                     v.reset();
-		    v
+        		    v
                 }
 
                 fn read<
@@ -348,11 +348,11 @@ impl Visitor for CodegenVisitor {
     fn enumeration(&mut self, e: Arc<crate::ast::Enum>) {
         let name = format_ident!("{}", e.id.name.to_case(Case::Pascal));
         let repr = match e.width.value {
-            x if x < 8 => quote! { u8 },
-            x if x < 16 => quote! { u16 },
-            x if x < 32 => quote! { u32 },
-            x if x < 64 => quote! { u64 },
-            x if x < 128 => quote! { u128 },
+            x if x <= 8 => quote! { u8 },
+            x if x <= 16 => quote! { u16 },
+            x if x <= 32 => quote! { u32 },
+            x if x <= 64 => quote! { u64 },
+            x if x <= 128 => quote! { u128 },
             _ => panic!("enums cannot be more than 128 bits wide"),
         };
         let doc = e.doc.join("\n");
@@ -612,7 +612,7 @@ pub fn codegen(
 }
 
 pub fn generate_rpi(
-    modules: &BTreeMap<String, ModelModules>,
+    modules: &BTreeMap<String, Arc<ModelModules>>,
     addr_type: TokenStream,
     value_type: TokenStream,
 ) -> Result<String> {
