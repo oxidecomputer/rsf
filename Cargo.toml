@@ -2,7 +2,6 @@
 resolver = "2"
 
 members = ["lib", "rust_rpi"]
-default_members = ["lib", "rust_rpi"]
 
 [workspace.package]
 version = "0.1.0"
