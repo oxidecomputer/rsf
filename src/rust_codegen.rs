@@ -204,6 +204,9 @@ impl Visitor for CodegenVisitor {
         let reset = match &reg.reset_value {
             None => quote! { self.0 = BitSet::<#width>::ZERO },
             Some(v) if aligned => {
+                // If the reset value is the same width as an integer type,
+                // casting the constant to the matching type lets us use an
+                // infallible "from" rather than ".try_from".
                 let val = match reg.width.value {
                     8 => proc_macro2::Literal::u8_suffixed(v.value as u8),
                     16 => proc_macro2::Literal::u16_suffixed(v.value as u16),
