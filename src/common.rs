@@ -97,6 +97,7 @@ pub struct Register<T> {
     pub doc: Vec<String>,
     pub id: Identifier,
     pub width: Number,
+    pub reset_value: Option<Number>,
     pub sram: bool,
     pub fields: Vec<Field<T>>,
 }

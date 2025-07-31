@@ -200,13 +200,33 @@ impl Visitor for CodegenVisitor {
 
         let doc = reg.doc.join("\n");
         let instance_doc = format!("Instance of a [`{}`]", reg.id.name);
-        let conversion = match reg.width.value {
-            8 | 16 | 32 | 64 => quote! {
-                BitSet::<#width>::from(value)
-            },
-            _ => quote! {
-                BitSet::<#width>::try_from(value).unwrap()
-            },
+        let aligned = matches!(reg.width.value, 8 | 16 | 32 | 64 | 128);
+        let reset = match &reg.reset_value {
+            None => quote! { self.0 = BitSet::<#width>::ZERO },
+            Some(v) if aligned => {
+                // If the reset value is the same width as an integer type,
+                // casting the constant to the matching type lets us use an
+                // infallible "from" rather than ".try_from".
+                let val = match reg.width.value {
+                    8 => proc_macro2::Literal::u8_suffixed(v.value as u8),
+                    16 => proc_macro2::Literal::u16_suffixed(v.value as u16),
+                    32 => proc_macro2::Literal::u32_suffixed(v.value as u32),
+                    64 => proc_macro2::Literal::u64_suffixed(v.value as u64),
+                    128 => proc_macro2::Literal::u128_suffixed(v.value),
+                    _ => panic!("can't happen"),
+                };
+                quote! { self.0 = BitSet::<#width>::from(#val) }
+            }
+            Some(v) => {
+                let val = proc_macro2::Literal::u128_suffixed(v.value);
+                quote! { self.0 = BitSet::<#width>::try_from(#val).unwrap()}
+            }
+        };
+
+        let conversion = if aligned {
+            quote! { BitSet::<#width>::from(value) }
+        } else {
+            quote! { BitSet::<#width>::try_from(value).unwrap() }
         };
 
         self.register_definitions.extend(quote! {
@@ -218,7 +238,7 @@ impl Visitor for CodegenVisitor {
             impl #name {
                 #fields
                 pub fn reset(&mut self) {
-                    self.0 = BitSet::<#width>::ZERO;
+                    #reset
                 }
             }
 
@@ -268,6 +288,34 @@ impl Visitor for CodegenVisitor {
                     platform.write(self.addr, value)
                 }
 
+		fn try_set<
+                    P: rust_rpi::Platform<#addr_type, #value_type>,
+                    F: FnOnce(&mut #name) -> Result<(), P::Error>
+                >(
+                    &self,
+                    platform: &P,
+                    f: F,
+                ) -> Result<(), P::Error> {
+                    let mut value = #name::default();
+                    value.reset();
+                    f(&mut value)?;
+                    self.write(platform, value)
+                }
+
+                fn set<
+                    P: rust_rpi::Platform<#addr_type, #value_type>,
+                    F: FnOnce(&mut #name)
+                >(
+                    &self,
+                    platform: &P,
+                    f: F,
+                ) -> Result<(), P::Error> {
+                    let mut value = #name::default();
+                    value.reset();
+                    f(&mut value);
+                    self.write(platform, value)
+                }
+
                 fn try_update<
                     P: rust_rpi::Platform<#addr_type, #value_type>,
                     F: FnOnce(&mut #name) -> Result<(), P::Error>
@@ -294,7 +342,6 @@ impl Visitor for CodegenVisitor {
                     self.write(platform, value)
                 }
             }
-
         })
     }
 

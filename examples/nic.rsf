@@ -20,6 +20,8 @@ block Phy {
     status: PhyStatus @ 0x400,
     /// The Phy's version info
     version: version::VersionInfo @ 0x000,
+    /// test register.
+    debug: Debug @ 0x010,
 }
 
 /// Firmware block
@@ -79,5 +81,11 @@ sram register<32> Metadata {
 /// Firmware instruction
 sram register<32> FirmwareInstruction {
     /// Firmware instructions are 64 bit values
+    value: rw b32 @ 0x0,
+}
+
+/// Debug register to exercise the reset value
+register<32> Debug reset<0xffffffff> {
+    /// debug field
     value: rw b32 @ 0x0,
 }

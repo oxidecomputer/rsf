@@ -504,6 +504,7 @@ impl ModelModules {
                 id: r.id.clone(),
                 width: r.width.clone(),
                 sram: r.sram,
+                reset_value: r.reset_value.clone(),
                 fields,
             }));
         }

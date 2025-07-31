@@ -79,13 +79,17 @@ impl Emit for Register {
         }
         writeln!(
             f,
-            "{}register<{}> {} {{",
+            "{}register<{}> {}{} {{",
             match self.sram {
                 true => "sram ",
                 false => "",
             },
             self.width.to_code(),
-            self.id.name
+            self.id.name,
+            match &self.reset_value {
+                None => String::new(),
+                Some(v) => format!(" reset<{}>", v.to_code()),
+            },
         )?;
         for x in &self.fields {
             x.emit(f)?;

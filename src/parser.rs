@@ -176,6 +176,11 @@ pub fn parse_reg(input: &mut Input) -> ModalResult<Register> {
 pub fn parse_reg_cut(input: &mut Input) -> ModalResult<Register> {
     let width = delimited("<", number_parser, ">").parse_next(input)?;
     let id = identifier_parser.parse_next(input)?;
+    let reset_value = match token("reset").parse_next(input) {
+        Err(_) => None,
+        Ok(_) => Some(delimited("<", number_parser, ">").parse_next(input)?),
+    };
+
     token("{").parse_next(input)?;
     let fields = separated(0.., parse_field, token(",")).parse_next(input)?;
     // allow trailing comma
@@ -185,6 +190,7 @@ pub fn parse_reg_cut(input: &mut Input) -> ModalResult<Register> {
         doc: Vec::default(),
         id,
         width,
+        reset_value,
         sram: false,
         fields,
     })
@@ -499,7 +505,7 @@ mod test {
         assert_eq!(ast.enums[0].alternatives[3].id.name, "F2");
         assert_eq!(ast.enums[0].alternatives[4].id.name, "F4");
 
-        assert_eq!(ast.registers.len(), 4);
+        assert_eq!(ast.registers.len(), 5);
         assert_eq!(ast.registers[0].id.name, "PhyConfig");
         assert_eq!(ast.registers[0].width.value, 32);
         assert_eq!(ast.registers[0].fields.len(), 5);
@@ -586,7 +592,7 @@ mod test {
 
         assert_eq!(ast.blocks.len(), 3);
         assert_eq!(ast.blocks[1].id.name, "Phy");
-        assert_eq!(ast.blocks[1].elements.len(), 3);
+        assert_eq!(ast.blocks[1].elements.len(), 4);
         assert_eq!(
             ast.blocks[1].elements[0].component,
             Component::Single {

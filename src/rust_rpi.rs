@@ -48,6 +48,27 @@ pub trait RegisterInstance<T, AddrType, ValueType> {
         value: T,
     ) -> Result<(), P::Error>;
 
+    /// Attempt a fallible update of this register instance. This write
+    /// operation starts with a register initialized to the reset value, and
+    /// calls a user-defined update function passed in to perform the update on
+    /// the register fields.
+    fn try_set<
+        P: Platform<AddrType, ValueType>,
+        F: FnOnce(&mut T) -> Result<(), P::Error>,
+    >(
+        &self,
+        platform: &P,
+        f: F,
+    ) -> Result<(), P::Error>;
+
+    /// Perform an update of this register instance. This write operation starts
+    /// with a register initialized to the reset value, and calls a user-defined
+    /// update function passed in to perform the update on the register fields.
+    fn set<P: Platform<AddrType, ValueType>, F: FnOnce(&mut T)>(
+        &self,
+        platform: &P,
+        f: F,
+    ) -> Result<(), P::Error>;
     /// Attempt a fallible update of this register instance. This is a composite
     /// read/write operation with a user-defined update function passed in to
     /// perform the update on the register fields.
