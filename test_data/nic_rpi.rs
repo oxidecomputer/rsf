@@ -83,6 +83,25 @@ impl rust_rpi::RegisterInstance<PhyConfig, u32, u32> for PhyConfigInstance {
     ) -> Result<(), P::Error> {
         platform.write(self.addr, value)
     }
+    fn try_set<
+        P: rust_rpi::Platform<u32, u32>,
+        F: FnOnce(&mut PhyConfig) -> Result<(), P::Error>,
+    >(&self, platform: &P, f: F) -> Result<(), P::Error> {
+        let mut value = PhyConfig::default();
+        value.reset();
+        f(&mut value)?;
+        self.write(platform, value)
+    }
+    fn set<P: rust_rpi::Platform<u32, u32>, F: FnOnce(&mut PhyConfig)>(
+        &self,
+        platform: &P,
+        f: F,
+    ) -> Result<(), P::Error> {
+        let mut value = PhyConfig::default();
+        value.reset();
+        f(&mut value);
+        self.write(platform, value)
+    }
     fn try_update<
         P: rust_rpi::Platform<u32, u32>,
         F: FnOnce(&mut PhyConfig) -> Result<(), P::Error>,
@@ -153,6 +172,25 @@ impl rust_rpi::RegisterInstance<PhyStatus, u32, u32> for PhyStatusInstance {
         value: PhyStatus,
     ) -> Result<(), P::Error> {
         platform.write(self.addr, value)
+    }
+    fn try_set<
+        P: rust_rpi::Platform<u32, u32>,
+        F: FnOnce(&mut PhyStatus) -> Result<(), P::Error>,
+    >(&self, platform: &P, f: F) -> Result<(), P::Error> {
+        let mut value = PhyStatus::default();
+        value.reset();
+        f(&mut value)?;
+        self.write(platform, value)
+    }
+    fn set<P: rust_rpi::Platform<u32, u32>, F: FnOnce(&mut PhyStatus)>(
+        &self,
+        platform: &P,
+        f: F,
+    ) -> Result<(), P::Error> {
+        let mut value = PhyStatus::default();
+        value.reset();
+        f(&mut value);
+        self.write(platform, value)
     }
     fn try_update<
         P: rust_rpi::Platform<u32, u32>,
@@ -234,6 +272,25 @@ impl rust_rpi::RegisterInstance<Debug, u32, u32> for DebugInstance {
         value: Debug,
     ) -> Result<(), P::Error> {
         platform.write(self.addr, value)
+    }
+    fn try_set<
+        P: rust_rpi::Platform<u32, u32>,
+        F: FnOnce(&mut Debug) -> Result<(), P::Error>,
+    >(&self, platform: &P, f: F) -> Result<(), P::Error> {
+        let mut value = Debug::default();
+        value.reset();
+        f(&mut value)?;
+        self.write(platform, value)
+    }
+    fn set<P: rust_rpi::Platform<u32, u32>, F: FnOnce(&mut Debug)>(
+        &self,
+        platform: &P,
+        f: F,
+    ) -> Result<(), P::Error> {
+        let mut value = Debug::default();
+        value.reset();
+        f(&mut value);
+        self.write(platform, value)
     }
     fn try_update<
         P: rust_rpi::Platform<u32, u32>,
@@ -528,6 +585,25 @@ pub mod version {
             value: Version,
         ) -> Result<(), P::Error> {
             platform.write(self.addr, value)
+        }
+        fn try_set<
+            P: rust_rpi::Platform<u32, u32>,
+            F: FnOnce(&mut Version) -> Result<(), P::Error>,
+        >(&self, platform: &P, f: F) -> Result<(), P::Error> {
+            let mut value = Version::default();
+            value.reset();
+            f(&mut value)?;
+            self.write(platform, value)
+        }
+        fn set<P: rust_rpi::Platform<u32, u32>, F: FnOnce(&mut Version)>(
+            &self,
+            platform: &P,
+            f: F,
+        ) -> Result<(), P::Error> {
+            let mut value = Version::default();
+            value.reset();
+            f(&mut value);
+            self.write(platform, value)
         }
         fn try_update<
             P: rust_rpi::Platform<u32, u32>,
