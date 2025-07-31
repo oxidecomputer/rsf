@@ -4,7 +4,7 @@ use crate::ast::Number;
 use crate::common::{FieldMode, NumberFormat, Typename};
 use crate::model::{Block, Component, FieldType, FieldUserType, Register};
 use crate::model::{ModelModules, Visitor};
-use anyhow::{Result, anyhow};
+use anyhow::{anyhow, Result};
 use camino::Utf8Path;
 use camino_tempfile::NamedUtf8TempFile;
 use convert_case::{Case, Casing};
@@ -48,40 +48,10 @@ impl CodegenVisitor {
         }
         tokens
     }
-
-    // Todo: the SRAM interface needs to be fleshed out as we get more
-    // experience with both the consumers of the API and the underlying
-    // mechanism.  For now, we simply provide enough functionality to
-    // locate the data in SRAM and instantiate an instance in memory.
-    fn sram(&mut self, reg: Arc<Register>) {
-        let name = format_ident!("{}", reg.id.name.to_case(Case::Pascal));
-        let width = proc_macro2::Literal::u128_unsuffixed(reg.width.value);
-
-        let instance_name =
-            format_ident!("{}Instance", reg.id.name.to_case(Case::Pascal));
-
-        let doc = reg.doc.join("\n");
-        let instance_doc = format!("Instance of a [`{}`]", reg.id.name);
-
-        self.register_definitions.extend(quote! {
-
-            #[derive(Debug, Default)]
-            #[doc = #doc]
-            pub struct #name([u8; #width]);
-
-            #[doc = #instance_doc]
-            pub struct #instance_name {
-                pub msel_id: u32,
-            }
-        })
-    }
 }
 
 impl Visitor for CodegenVisitor {
     fn register(&mut self, reg: Arc<Register>) {
-        if reg.sram {
-            return self.sram(reg);
-        }
         let name = format_ident!("{}", reg.id.name.to_case(Case::Pascal));
         let width = proc_macro2::Literal::u128_unsuffixed(reg.width.value);
         let mut fields = TokenStream::default();
@@ -112,6 +82,7 @@ impl Visitor for CodegenVisitor {
                         fields.extend(quote! {
                             #[doc = #doc]
                             pub fn #setter(&mut self, data__: bool) {
+				    // foo
                                 self.0.set_field::<#width, #offset>(BitSet::<#width>::from(data__));
                             }
                         })
@@ -139,6 +110,7 @@ impl Visitor for CodegenVisitor {
                         fields.extend(quote! {
                             #[doc = #doc]
                             pub fn #setter(&mut self, data__: BitSet<#width>) {
+				    // bar
                                 self.0.set_field::<#width, #offset>(data__);
                             }
                         })
@@ -186,6 +158,7 @@ impl Visitor for CodegenVisitor {
                         fields.extend(quote! {
                             #[doc = #doc]
                             pub fn #setter(&mut self, data__: #typename) {
+				    // baz
                                 self.0.set_field::<#width, #offset>(data__.into());
                             }
                         })
@@ -209,18 +182,23 @@ impl Visitor for CodegenVisitor {
 
         let doc = reg.doc.join("\n");
         let instance_doc = format!("Instance of a [`{}`]", reg.id.name);
+        let aligned = matches!(reg.width.value, 8 | 16 | 32 | 64 | 128);
         let reset = match &reg.reset_value {
             None => quote! { self.0 = BitSet::<#width>::ZERO },
-            Some(v) => {
+            Some(v) if aligned => {
                 let val = match reg.width.value {
                     8 => proc_macro2::Literal::u8_suffixed(v.value as u8),
                     16 => proc_macro2::Literal::u16_suffixed(v.value as u16),
                     32 => proc_macro2::Literal::u32_suffixed(v.value as u32),
                     64 => proc_macro2::Literal::u64_suffixed(v.value as u64),
                     128 => proc_macro2::Literal::u128_suffixed(v.value),
-                    _ => panic!("can't happen"),
+                    x => panic!("reg {} has reset width of {}", reg.id.name, x),
                 };
                 quote! { self.0 = BitSet::<#width>::from(#val) }
+            }
+            Some(v) => {
+                let val = proc_macro2::Literal::u128_suffixed(v.value);
+                quote! { self.0 = BitSet::<#width>::from(#val)}
             }
         };
 
@@ -255,15 +233,17 @@ impl Visitor for CodegenVisitor {
             quote! {}
         };
 
-        let rpi_impl = if reg.width.value <= u128::from(self.value_type) {
+        let mut rpi_impl = if reg.width.value <= u128::from(self.value_type) {
             quote! {
-                impl rust_rpi::RegisterInstance<#name, #addr_type, #value_type> for #instance_name {
+                impl rust_rpi::RegisterConstruct<#name> for #instance_name {
                     fn cons(&self) -> #name {
                         let mut v = #name::default();
                         v.reset();
                         v
                     }
+                }
 
+                impl rust_rpi::RegisterAccess<#name, #addr_type, #value_type> for #instance_name {
                     fn read<
                         P: rust_rpi::Platform<#addr_type, #value_type>,
                     >(
@@ -341,9 +321,27 @@ impl Visitor for CodegenVisitor {
             quote! {}
         };
 
+        rpi_impl.extend(quote! {
+            impl rust_rpi::RegisterInstance for #instance_name {
+                fn width(&self) -> usize {
+                    #width as usize
+                }
+
+                fn copies(&self) -> u32 {
+                    self.copies
+                }
+            }
+        });
+
+        let msel = if reg.sram {
+            quote! { pub msel_id: u32, }
+        } else {
+            quote! {}
+        };
+
         self.register_definitions.extend(quote! {
 
-            #[derive(Default, Debug)]
+            #[derive(Debug, Default, Clone)]
             #[doc = #doc]
             pub struct #name(BitSet<#width>);
 
@@ -352,13 +350,25 @@ impl Visitor for CodegenVisitor {
                 pub fn reset(&mut self) {
                     #reset
                 }
+
+                pub fn from_bytes(value: &[u8]) -> Result<Self, rust_rpi::OutOfRange> {
+                    Ok(Self(BitSet::<#width>::try_from(&value.to_vec())
+                        .map_err(|_| rust_rpi::OutOfRange::ArrayTooLarge)?
+                    ))
+                }
+
+                pub fn to_bytes(&self) -> Vec<u8> {
+                    Vec::<u8>::from(&self.0)
+                }
             }
 
             #to_from_value
 
             #[doc = #instance_doc]
             pub struct #instance_name {
+                #msel
                 pub addr: #addr_type,
+                pub copies: u32
             }
 
             #rpi_impl
@@ -450,7 +460,8 @@ impl Visitor for CodegenVisitor {
             #[doc = #doc]
             #[derive(Default, Debug)]
             pub struct #block_name{
-                pub addr: #addr_type
+                pub addr: #addr_type,
+                pub copies: u32
             }
         });
 
@@ -486,25 +497,25 @@ impl Visitor for CodegenVisitor {
                         format_ident!("{}", id.name.to_case(Case::Snake));
                     let type_name =
                         typename_to_qualified_ident(typ, "Instance");
-                    if block.sram {
-                        tokens.extend(quote! {
-                            #[doc = #doc]
-                            pub fn #method_name(&self) -> #type_name {
-                                #type_name {
-                                    msel_id: #msel_id,
-                                }
-                            }
-                        });
+
+                    let contents = if block.sram {
+                        quote! {
+                            msel_id: #msel_id,
+                            addr: self.addr #offset,
+                            copies: 1,
+                        }
                     } else {
-                        tokens.extend(quote! {
-                            #[doc = #doc]
-                            pub fn #method_name(&self) -> #type_name {
-                                #type_name {
-                                    addr: self.addr #offset,
-                                }
-                            }
-                        });
-                    }
+                        quote! {
+                            addr: self.addr #offset,
+                            copies: 1,
+                        }
+                    };
+                    tokens.extend(quote! {
+                        #[doc = #doc]
+                        pub fn #method_name(&self) -> #type_name {
+                            #type_name { #contents }
+                        }
+                    });
                     self.block_methods.insert(current_block.clone(), tokens);
                 }
                 Component::Array {
@@ -524,29 +535,30 @@ impl Visitor for CodegenVisitor {
                     .unwrap();
                     let length =
                         proc_macro2::Literal::u128_unsuffixed(length.value);
-                    if block.sram {
-                        tokens.extend(quote! {
-                        #[doc = #doc]
-                            pub fn #method_name(&self) -> #type_name {
-                                #type_name {
-                                    msel_id: #msel_id,
-                                }
-                            }
-                        })
+                    let contents = if block.sram {
+                        quote! {
+                            msel_id: #msel_id,
+                            addr: self.addr #offset + (index * #spacing),
+                            copies: #length,
+                        }
                     } else {
-                        tokens.extend(quote! {
+                        quote! {
+                            addr: self.addr #offset + (index * #spacing),
+                            copies: #length,
+                        }
+                    };
+
+                    tokens.extend(quote! {
                         #[doc = #doc]
                         pub fn #method_name(&self, index: #addr_type)
                             -> Result<#type_name, rust_rpi::OutOfRange> {
                             if index > #length {
-                                return Err(rust_rpi::OutOfRange::IndexOutOfRange);
+                                Err(rust_rpi::OutOfRange::IndexOutOfRange)
+                            } else {
+                                Ok(#type_name { #contents })
                             }
-                            Ok(#type_name {
-                                addr: self.addr #offset + (index * #spacing)
-                            })
                         }
                     });
-                    }
                     self.block_methods.insert(current_block.clone(), tokens);
                 }
             }

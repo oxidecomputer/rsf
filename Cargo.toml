@@ -19,8 +19,10 @@ num_enum = "0.7.3"
 proc-macro2 = "1.0.95"
 quote = "1.0.40"
 convert_case = "0.8.0"
-bitset = { git = "https://github.com/oxidecomputer/bitset", branch = "no_std"}
-bitset-macro = { git = "https://github.com/oxidecomputer/bitset", branch = "no_std" }
+bitset = { path = "/home/nils/dev/x2/bitset/lib" }
+bitset-macro = { path = "/home/nils/dev/x2/bitset/macro" }
+# bitset = { git = "https://github.com/oxidecomputer/bitset", branch = "no_std"}
+# bitset-macro = { git = "https://github.com/oxidecomputer/bitset", branch = "no_std" }
 thiserror = "2.0.12"
 petgraph = "0.8.2"
 clap = { version = "4.5.40", features = ["derive"] }

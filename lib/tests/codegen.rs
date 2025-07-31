@@ -41,7 +41,7 @@ mod generated {
 #[test]
 fn run_generated_code() -> anyhow::Result<()> {
     use generated::*;
-    use rust_rpi::{DummyPlatform, RegisterInstance};
+    use rust_rpi::{DummyPlatform, RegisterAccess, RegisterInstance};
 
     // Initialize the underlying platform. For testing this is just a
     // dummy platform.
