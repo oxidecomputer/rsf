@@ -1,6 +1,6 @@
 use bitset::BitSet;
 use rust_rpi;
-#[derive(Default, Debug)]
+#[derive(Debug, Default, Clone)]
 /** Configuration for an Ethernet physical interface (phy).
 
  All field modifications take effect immediately.*/
@@ -70,6 +70,17 @@ impl PhyConfig {
     pub fn attrs(&self) -> &'static [(&'static str, &'static str)] {
         &[]
     }
+    pub fn from_bytes(value: &[u8]) -> Result<Self, rust_rpi::OutOfRange> {
+        Ok(
+            Self(
+                BitSet::<32>::try_from(&value.to_vec())
+                    .map_err(|_| rust_rpi::OutOfRange::ArrayTooLarge)?,
+            ),
+        )
+    }
+    pub fn to_bytes(&self) -> Vec<u8> {
+        Vec::<u8>::from(&self.0)
+    }
 }
 impl From<u32> for PhyConfig {
     fn from(value: u32) -> Self {
@@ -84,13 +95,27 @@ impl From<PhyConfig> for u32 {
 ///Instance of a [`PhyConfig`]
 pub struct PhyConfigInstance {
     pub addr: u32,
+    pub copies: u32,
 }
-impl rust_rpi::RegisterInstance<PhyConfig, u32, u32> for PhyConfigInstance {
+impl rust_rpi::RegisterInstance for PhyConfigInstance {
+    fn width(&self) -> usize {
+        32 as usize
+    }
+    fn copies(&self) -> u32 {
+        self.copies
+    }
+}
+impl rust_rpi::RegisterConstruct<PhyConfig> for PhyConfigInstance {
     fn cons(&self) -> PhyConfig {
         let mut v = PhyConfig::default();
         v.reset();
         v
     }
+    fn from_bytes(&self, contents: &[u8]) -> Result<PhyConfig, rust_rpi::OutOfRange> {
+        PhyConfig::from_bytes(contents)
+    }
+}
+impl rust_rpi::RegisterAccess<PhyConfig, u32, u32> for PhyConfigInstance {
     fn read<P: rust_rpi::Platform<u32, u32>>(
         &self,
         platform: &P,
@@ -151,7 +176,7 @@ impl core::fmt::Display for PhyConfig {
         Ok(())
     }
 }
-#[derive(Default, Debug)]
+#[derive(Debug, Default, Clone)]
 /// Status of an Ethernet physical interface (phy).
 pub struct PhyStatus(BitSet<32>);
 impl PhyStatus {
@@ -185,6 +210,17 @@ impl PhyStatus {
     pub fn attrs(&self) -> &'static [(&'static str, &'static str)] {
         &[]
     }
+    pub fn from_bytes(value: &[u8]) -> Result<Self, rust_rpi::OutOfRange> {
+        Ok(
+            Self(
+                BitSet::<32>::try_from(&value.to_vec())
+                    .map_err(|_| rust_rpi::OutOfRange::ArrayTooLarge)?,
+            ),
+        )
+    }
+    pub fn to_bytes(&self) -> Vec<u8> {
+        Vec::<u8>::from(&self.0)
+    }
 }
 impl From<u32> for PhyStatus {
     fn from(value: u32) -> Self {
@@ -199,13 +235,27 @@ impl From<PhyStatus> for u32 {
 ///Instance of a [`PhyStatus`]
 pub struct PhyStatusInstance {
     pub addr: u32,
+    pub copies: u32,
 }
-impl rust_rpi::RegisterInstance<PhyStatus, u32, u32> for PhyStatusInstance {
+impl rust_rpi::RegisterInstance for PhyStatusInstance {
+    fn width(&self) -> usize {
+        32 as usize
+    }
+    fn copies(&self) -> u32 {
+        self.copies
+    }
+}
+impl rust_rpi::RegisterConstruct<PhyStatus> for PhyStatusInstance {
     fn cons(&self) -> PhyStatus {
         let mut v = PhyStatus::default();
         v.reset();
         v
     }
+    fn from_bytes(&self, contents: &[u8]) -> Result<PhyStatus, rust_rpi::OutOfRange> {
+        PhyStatus::from_bytes(contents)
+    }
+}
+impl rust_rpi::RegisterAccess<PhyStatus, u32, u32> for PhyStatusInstance {
     fn read<P: rust_rpi::Platform<u32, u32>>(
         &self,
         platform: &P,
@@ -264,31 +314,140 @@ impl core::fmt::Display for PhyStatus {
         Ok(())
     }
 }
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 /// Metadata value
-pub struct Metadata([u8; 32]);
+pub struct Metadata(BitSet<32>);
 impl Metadata {
+    /// Metadata values are 32 bit integers
+    pub fn get_value(&self) -> BitSet<32> {
+        self.0.get_field::<32, 0>()
+    }
+    /// Metadata values are 32 bit integers
+    pub fn set_value(&mut self, data__: BitSet<32>) {
+        self.0.set_field::<32, 0>(data__);
+    }
+    pub fn value_attrs(&self) -> &'static [(&'static str, &'static str)] {
+        &[]
+    }
+    pub fn value(&self) -> BitSet<32> {
+        self.0
+    }
+    pub fn reset(&mut self) {
+        self.0 = BitSet::<32>::ZERO;
+    }
     pub fn attrs(&self) -> &'static [(&'static str, &'static str)] {
         &[]
+    }
+    pub fn from_bytes(value: &[u8]) -> Result<Self, rust_rpi::OutOfRange> {
+        Ok(
+            Self(
+                BitSet::<32>::try_from(&value.to_vec())
+                    .map_err(|_| rust_rpi::OutOfRange::ArrayTooLarge)?,
+            ),
+        )
+    }
+    pub fn to_bytes(&self) -> Vec<u8> {
+        Vec::<u8>::from(&self.0)
     }
 }
 ///Instance of a [`Metadata`]
 pub struct MetadataInstance {
-    pub msel_id: u32,
+    pub msel_id: u8,
+    pub addr: u32,
+    pub copies: u32,
 }
-#[derive(Debug, Default)]
+impl rust_rpi::SramInstance for MetadataInstance {
+    fn msel_id(&self) -> u8 {
+        self.msel_id
+    }
+}
+impl rust_rpi::RegisterInstance for MetadataInstance {
+    fn width(&self) -> usize {
+        32 as usize
+    }
+    fn copies(&self) -> u32 {
+        self.copies
+    }
+}
+impl rust_rpi::RegisterConstruct<Metadata> for MetadataInstance {
+    fn cons(&self) -> Metadata {
+        let mut v = Metadata::default();
+        v.reset();
+        v
+    }
+    fn from_bytes(&self, contents: &[u8]) -> Result<Metadata, rust_rpi::OutOfRange> {
+        Metadata::from_bytes(contents)
+    }
+}
+#[derive(Debug, Default, Clone)]
 /// Firmware instruction
-pub struct FirmwareInstruction([u8; 32]);
+pub struct FirmwareInstruction(BitSet<32>);
 impl FirmwareInstruction {
+    /// Firmware instructions are 64 bit values
+    pub fn get_value(&self) -> BitSet<32> {
+        self.0.get_field::<32, 0>()
+    }
+    /// Firmware instructions are 64 bit values
+    pub fn set_value(&mut self, data__: BitSet<32>) {
+        self.0.set_field::<32, 0>(data__);
+    }
+    pub fn value_attrs(&self) -> &'static [(&'static str, &'static str)] {
+        &[]
+    }
+    pub fn value(&self) -> BitSet<32> {
+        self.0
+    }
+    pub fn reset(&mut self) {
+        self.0 = BitSet::<32>::ZERO;
+    }
     pub fn attrs(&self) -> &'static [(&'static str, &'static str)] {
         &[]
+    }
+    pub fn from_bytes(value: &[u8]) -> Result<Self, rust_rpi::OutOfRange> {
+        Ok(
+            Self(
+                BitSet::<32>::try_from(&value.to_vec())
+                    .map_err(|_| rust_rpi::OutOfRange::ArrayTooLarge)?,
+            ),
+        )
+    }
+    pub fn to_bytes(&self) -> Vec<u8> {
+        Vec::<u8>::from(&self.0)
     }
 }
 ///Instance of a [`FirmwareInstruction`]
 pub struct FirmwareInstructionInstance {
-    pub msel_id: u32,
+    pub msel_id: u8,
+    pub addr: u32,
+    pub copies: u32,
 }
-#[derive(Default, Debug)]
+impl rust_rpi::SramInstance for FirmwareInstructionInstance {
+    fn msel_id(&self) -> u8 {
+        self.msel_id
+    }
+}
+impl rust_rpi::RegisterInstance for FirmwareInstructionInstance {
+    fn width(&self) -> usize {
+        32 as usize
+    }
+    fn copies(&self) -> u32 {
+        self.copies
+    }
+}
+impl rust_rpi::RegisterConstruct<FirmwareInstruction> for FirmwareInstructionInstance {
+    fn cons(&self) -> FirmwareInstruction {
+        let mut v = FirmwareInstruction::default();
+        v.reset();
+        v
+    }
+    fn from_bytes(
+        &self,
+        contents: &[u8],
+    ) -> Result<FirmwareInstruction, rust_rpi::OutOfRange> {
+        FirmwareInstruction::from_bytes(contents)
+    }
+}
+#[derive(Debug, Default, Clone)]
 /// Debug register to exercise the reset value
 pub struct Debug(BitSet<32>);
 impl Debug {
@@ -312,6 +471,17 @@ impl Debug {
     pub fn attrs(&self) -> &'static [(&'static str, &'static str)] {
         &[]
     }
+    pub fn from_bytes(value: &[u8]) -> Result<Self, rust_rpi::OutOfRange> {
+        Ok(
+            Self(
+                BitSet::<32>::try_from(&value.to_vec())
+                    .map_err(|_| rust_rpi::OutOfRange::ArrayTooLarge)?,
+            ),
+        )
+    }
+    pub fn to_bytes(&self) -> Vec<u8> {
+        Vec::<u8>::from(&self.0)
+    }
 }
 impl From<u32> for Debug {
     fn from(value: u32) -> Self {
@@ -326,13 +496,27 @@ impl From<Debug> for u32 {
 ///Instance of a [`Debug`]
 pub struct DebugInstance {
     pub addr: u32,
+    pub copies: u32,
 }
-impl rust_rpi::RegisterInstance<Debug, u32, u32> for DebugInstance {
+impl rust_rpi::RegisterInstance for DebugInstance {
+    fn width(&self) -> usize {
+        32 as usize
+    }
+    fn copies(&self) -> u32 {
+        self.copies
+    }
+}
+impl rust_rpi::RegisterConstruct<Debug> for DebugInstance {
     fn cons(&self) -> Debug {
         let mut v = Debug::default();
         v.reset();
         v
     }
+    fn from_bytes(&self, contents: &[u8]) -> Result<Debug, rust_rpi::OutOfRange> {
+        Debug::from_bytes(contents)
+    }
+}
+impl rust_rpi::RegisterAccess<Debug, u32, u32> for DebugInstance {
     fn read<P: rust_rpi::Platform<u32, u32>>(
         &self,
         platform: &P,
@@ -434,22 +618,26 @@ impl Lanes {
 #[derive(Default, Debug)]
 pub struct PhyInstance {
     pub addr: u32,
+    pub copies: u32,
 }
 /// Firmware block
 #[derive(Default, Debug)]
 pub struct FirmwareInstance {
     pub addr: u32,
+    pub copies: u32,
 }
 /// Register programming interface for this NIC.
 #[derive(Default, Debug)]
 pub struct Client {
     pub addr: u32,
+    pub copies: u32,
 }
 impl Client {
     /// The NIC's version info
     pub fn version(&self) -> version::VersionInfoInstance {
         version::VersionInfoInstance {
             addr: self.addr + 0x100,
+            copies: 1,
         }
     }
     pub fn version_attrs(&self) -> &'static [(&'static str, &'static str)] {
@@ -458,11 +646,13 @@ impl Client {
     /// A block for each of the four phys.
     pub fn phys(&self, index: u32) -> Result<PhyInstance, rust_rpi::OutOfRange> {
         if index > 4 {
-            return Err(rust_rpi::OutOfRange::IndexOutOfRange);
+            Err(rust_rpi::OutOfRange::IndexOutOfRange)
+        } else {
+            Ok(PhyInstance {
+                addr: self.addr + 0x6000 + (index * 0x1000),
+                copies: 4,
+            })
         }
-        Ok(PhyInstance {
-            addr: self.addr + 0x6000 + (index * 0x1000),
-        })
     }
     pub fn phys_attrs(&self) -> &'static [(&'static str, &'static str)] {
         &[]
@@ -471,6 +661,7 @@ impl Client {
     pub fn firmware(&self) -> FirmwareInstance {
         FirmwareInstance {
             addr: self.addr + 0x10000,
+            copies: 1,
         }
     }
     pub fn firmware_attrs(&self) -> &'static [(&'static str, &'static str)] {
@@ -482,16 +673,36 @@ impl Client {
 }
 impl FirmwareInstance {
     /// Metadata section of firmware
-    pub fn metadata(&self) -> MetadataInstance {
-        MetadataInstance { msel_id: 0 }
+    pub fn metadata(
+        &self,
+        index: u32,
+    ) -> Result<MetadataInstance, rust_rpi::OutOfRange> {
+        if index > 64 {
+            Err(rust_rpi::OutOfRange::IndexOutOfRange)
+        } else {
+            Ok(MetadataInstance {
+                msel_id: 0,
+                addr: self.addr + (index * 0x20),
+                copies: 64,
+            })
+        }
     }
     pub fn metadata_attrs(&self) -> &'static [(&'static str, &'static str)] {
         &[]
     }
     /// Instruction section of firmware
-    pub fn instructions(&self) -> FirmwareInstructionInstance {
-        FirmwareInstructionInstance {
-            msel_id: 1,
+    pub fn instructions(
+        &self,
+        index: u32,
+    ) -> Result<FirmwareInstructionInstance, rust_rpi::OutOfRange> {
+        if index > 1024 {
+            Err(rust_rpi::OutOfRange::IndexOutOfRange)
+        } else {
+            Ok(FirmwareInstructionInstance {
+                msel_id: 1,
+                addr: self.addr + 0x800 + (index * 0x40),
+                copies: 1024,
+            })
         }
     }
     pub fn instructions_attrs(&self) -> &'static [(&'static str, &'static str)] {
@@ -506,6 +717,7 @@ impl PhyInstance {
     pub fn version(&self) -> version::VersionInfoInstance {
         version::VersionInfoInstance {
             addr: self.addr,
+            copies: 1,
         }
     }
     pub fn version_attrs(&self) -> &'static [(&'static str, &'static str)] {
@@ -515,6 +727,7 @@ impl PhyInstance {
     pub fn debug(&self) -> DebugInstance {
         DebugInstance {
             addr: self.addr + 0x10,
+            copies: 1,
         }
     }
     pub fn debug_attrs(&self) -> &'static [(&'static str, &'static str)] {
@@ -524,6 +737,7 @@ impl PhyInstance {
     pub fn config(&self) -> PhyConfigInstance {
         PhyConfigInstance {
             addr: self.addr + 0x200,
+            copies: 1,
         }
     }
     pub fn config_attrs(&self) -> &'static [(&'static str, &'static str)] {
@@ -533,6 +747,7 @@ impl PhyInstance {
     pub fn status(&self) -> PhyStatusInstance {
         PhyStatusInstance {
             addr: self.addr + 0x400,
+            copies: 1,
         }
     }
     pub fn status_attrs(&self) -> &'static [(&'static str, &'static str)] {
@@ -697,12 +912,14 @@ pub mod ethernet {
     #[derive(Default, Debug)]
     pub struct TestInstance {
         pub addr: u32,
+        pub copies: u32,
     }
     impl TestInstance {
         /// version info
         pub fn version(&self) -> version::VersionInfoInstance {
             version::VersionInfoInstance {
                 addr: self.addr,
+                copies: 1,
             }
         }
         pub fn version_attrs(&self) -> &'static [(&'static str, &'static str)] {
@@ -716,7 +933,7 @@ pub mod ethernet {
 pub mod version {
     use bitset::BitSet;
     use rust_rpi;
-    #[derive(Default, Debug)]
+    #[derive(Debug, Default, Clone)]
     /// Version number
     pub struct Version(BitSet<32>);
     impl Version {
@@ -736,6 +953,17 @@ pub mod version {
         pub fn attrs(&self) -> &'static [(&'static str, &'static str)] {
             &[]
         }
+        pub fn from_bytes(value: &[u8]) -> Result<Self, rust_rpi::OutOfRange> {
+            Ok(
+                Self(
+                    BitSet::<32>::try_from(&value.to_vec())
+                        .map_err(|_| rust_rpi::OutOfRange::ArrayTooLarge)?,
+                ),
+            )
+        }
+        pub fn to_bytes(&self) -> Vec<u8> {
+            Vec::<u8>::from(&self.0)
+        }
     }
     impl From<u32> for Version {
         fn from(value: u32) -> Self {
@@ -750,13 +978,27 @@ pub mod version {
     ///Instance of a [`Version`]
     pub struct VersionInstance {
         pub addr: u32,
+        pub copies: u32,
     }
-    impl rust_rpi::RegisterInstance<Version, u32, u32> for VersionInstance {
+    impl rust_rpi::RegisterInstance for VersionInstance {
+        fn width(&self) -> usize {
+            32 as usize
+        }
+        fn copies(&self) -> u32 {
+            self.copies
+        }
+    }
+    impl rust_rpi::RegisterConstruct<Version> for VersionInstance {
         fn cons(&self) -> Version {
             let mut v = Version::default();
             v.reset();
             v
         }
+        fn from_bytes(&self, contents: &[u8]) -> Result<Version, rust_rpi::OutOfRange> {
+            Version::from_bytes(contents)
+        }
+    }
+    impl rust_rpi::RegisterAccess<Version, u32, u32> for VersionInstance {
         fn read<P: rust_rpi::Platform<u32, u32>>(
             &self,
             platform: &P,
@@ -820,11 +1062,15 @@ pub mod version {
     #[derive(Default, Debug)]
     pub struct VersionInfoInstance {
         pub addr: u32,
+        pub copies: u32,
     }
     impl VersionInfoInstance {
         /// Version register.
         pub fn version(&self) -> VersionInstance {
-            VersionInstance { addr: self.addr }
+            VersionInstance {
+                addr: self.addr,
+                copies: 1,
+            }
         }
         pub fn version_attrs(&self) -> &'static [(&'static str, &'static str)] {
             &[]

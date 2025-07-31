@@ -84,9 +84,6 @@ impl CodegenVisitor {
 
 impl Visitor for CodegenVisitor {
     fn register(&mut self, reg: Arc<Register>) {
-        if reg.sram {
-            return self.sram(reg);
-        }
         let name = format_ident!("{}", reg.id.name.to_case(Case::Pascal));
         let width = proc_macro2::Literal::u128_unsuffixed(reg.width.value);
         let mut display_impl = TokenStream::default();
@@ -252,112 +249,27 @@ impl Visitor for CodegenVisitor {
         //
         // TODO: maybe there should be a more explicit `dma` qualifier instead.
         // Similar to the `sram` qualifier.
-        let to_from_value = if reg.width.value <= u128::from(self.value_type) {
-            quote! {
-                impl From<#value_type> for #name {
-                    fn from(value: #value_type) -> Self {
-                        //TODO should be fallible
-                        Self(#conversion)
+        let to_from_value =
+            if !reg.sram && reg.width.value <= u128::from(self.value_type) {
+                quote! {
+                    impl From<#value_type> for #name {
+                        fn from(value: #value_type) -> Self {
+                            //TODO should be fallible
+                            Self(#conversion)
+                        }
+                    }
+
+                    impl From<#name> for #value_type {
+                        fn from(value: #name) -> Self {
+                            //TODO it's not obvious without looking here that value_type
+                            // should be an integer of some kind
+                            #value_type::from(value.0)
+                        }
                     }
                 }
-
-                impl From<#name> for #value_type {
-                    fn from(value: #name) -> Self {
-                        //TODO it's not obvious without looking here that value_type
-                        // should be an integer of some kind
-                        #value_type::from(value.0)
-                    }
-                }
-            }
-        } else {
-            quote! {}
-        };
-
-        let rpi_impl = if reg.width.value <= u128::from(self.value_type) {
-            quote! {
-                impl rust_rpi::RegisterInstance<#name, #addr_type, #value_type> for #instance_name {
-                    fn cons(&self) -> #name {
-                        let mut v = #name::default();
-                        v.reset();
-                        v
-                    }
-
-                    fn read<
-                        P: rust_rpi::Platform<#addr_type, #value_type>,
-                    >(
-                        &self,
-                        platform: &P,
-                    ) -> Result<#name, P::Error> {
-                        platform.read(self.addr)
-                    }
-
-                    fn write<
-                        P: rust_rpi::Platform<#addr_type, #value_type>,
-                    >(
-                        &self,
-                        platform: &P,
-                        value: #name,
-                    ) -> Result<(), P::Error> {
-                        platform.write(self.addr, value)
-                    }
-
-                    fn try_update<
-                        P: rust_rpi::Platform<#addr_type, #value_type>,
-                        F: FnOnce(&mut #name) -> Result<(), P::Error>
-                    >(
-                        &self,
-                        platform: &P,
-                        f: F,
-                    ) -> Result<(), P::Error> {
-                        let mut value = self.read(platform)?;
-                        f(&mut value)?;
-                        self.write(platform, value)
-                    }
-
-                    fn update<
-                        P: rust_rpi::Platform<#addr_type, #value_type>,
-                        F: FnOnce(&mut #name)
-                    >(
-                        &self,
-                        platform: &P,
-                        f: F,
-                    ) -> Result<(), P::Error> {
-                        let mut value = self.read(platform)?;
-                        f(&mut value);
-                        self.write(platform, value)
-                    }
-                    fn try_set<
-                        P: rust_rpi::Platform<#addr_type, #value_type>,
-                        F: FnOnce(&mut #name) -> Result<(), P::Error>
-                    >(
-                        &self,
-                        platform: &P,
-                        f: F,
-                    ) -> Result<(), P::Error> {
-                        let mut value = #name::default();
-                        value.reset();
-                        f(&mut value)?;
-                        self.write(platform, value)
-                    }
-
-                    fn set<
-                        P: rust_rpi::Platform<#addr_type, #value_type>,
-                        F: FnOnce(&mut #name)
-                    >(
-                        &self,
-                        platform: &P,
-                        f: F,
-                    ) -> Result<(), P::Error> {
-                        let mut value = #name::default();
-                        value.reset();
-                        f(&mut value);
-                        self.write(platform, value)
-                    }
-                }
-            }
-        } else {
-            quote! {}
-        };
+            } else {
+                quote! {}
+            };
 
         let format_param = if display_impl.is_empty() {
             format_ident!("_f")
@@ -368,7 +280,7 @@ impl Visitor for CodegenVisitor {
         let attrs = attrs_accessor(&format_ident!("attrs"), &reg.attrs);
         self.register_definitions.extend(quote! {
 
-            #[derive(Default, Debug)]
+            #[derive(Debug, Default, Clone)]
             #[doc = #doc]
             pub struct #name(BitSet<#width>);
 
@@ -380,25 +292,155 @@ impl Visitor for CodegenVisitor {
                 pub fn reset(&mut self) {
                     #reset
                 }
+
                 #attrs
-            }
 
-            #to_from_value
+                pub fn from_bytes(value: &[u8]) -> Result<Self, rust_rpi::OutOfRange> {
+                    Ok(Self(BitSet::<#width>::try_from(&value.to_vec())
+                        .map_err(|_| rust_rpi::OutOfRange::ArrayTooLarge)?
+                    ))
+                }
 
-            #[doc = #instance_doc]
-            pub struct #instance_name {
-                pub addr: #addr_type,
-            }
-
-            #rpi_impl
-
-            impl core::fmt::Display for #name {
-                fn fmt(&self, #format_param: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-                    #display_impl
-                    Ok(())
+                pub fn to_bytes(&self) -> Vec<u8> {
+                    Vec::<u8>::from(&self.0)
                 }
             }
-        })
+
+	    #to_from_value
+        });
+
+        if reg.sram {
+            self.register_definitions.extend(quote! {
+                #[doc = #instance_doc]
+                pub struct #instance_name {
+                    pub msel_id: u8,
+                    pub addr: #addr_type,
+                    pub copies: u32,
+                }
+
+                impl rust_rpi::SramInstance for #instance_name {
+                    fn msel_id(&self) -> u8 {
+                        self.msel_id
+                    }
+                }
+            })
+        } else {
+            self.register_definitions.extend(quote! {
+                #[doc = #instance_doc]
+                pub struct #instance_name {
+                    pub addr: #addr_type,
+                    pub copies: u32,
+                }
+            })
+        }
+
+        self.register_definitions.extend(quote! {
+                impl rust_rpi::RegisterInstance for #instance_name {
+                    fn width(&self) -> usize {
+                        #width as usize
+                    }
+
+                    fn copies(&self) -> u32 {
+                        self.copies
+                    }
+            }
+
+            impl rust_rpi::RegisterConstruct<#name> for #instance_name {
+                fn cons(&self) -> #name {
+                    let mut v = #name::default();
+                    v.reset();
+                    v
+                }
+                fn from_bytes(&self, contents: &[u8]) -> Result<#name, rust_rpi::OutOfRange> {
+                    #name::from_bytes(contents)
+                }
+        }
+        });
+
+        if !reg.sram {
+            self.register_definitions.extend(quote! {
+            impl rust_rpi::RegisterAccess<#name, #addr_type, #value_type> for #instance_name {
+                fn read<
+                    P: rust_rpi::Platform<#addr_type, #value_type>,
+                >(
+                    &self,
+                    platform: &P,
+                ) -> Result<#name, P::Error> {
+                    platform.read(self.addr)
+                }
+
+                fn write<
+                    P: rust_rpi::Platform<#addr_type, #value_type>,
+                >(
+                    &self,
+                    platform: &P,
+                    value: #name,
+                ) -> Result<(), P::Error> {
+                    platform.write(self.addr, value)
+                }
+
+		fn try_update<
+                    P: rust_rpi::Platform<#addr_type, #value_type>,
+                    F: FnOnce(&mut #name) -> Result<(), P::Error>
+                >(
+                    &self,
+                    platform: &P,
+                    f: F,
+                ) -> Result<(), P::Error> {
+                    let mut value = self.read(platform)?;
+                    f(&mut value)?;
+                    self.write(platform, value)
+                }
+
+                fn update<
+                    P: rust_rpi::Platform<#addr_type, #value_type>,
+                    F: FnOnce(&mut #name)
+                >(
+                    &self,
+                    platform: &P,
+                    f: F,
+                ) -> Result<(), P::Error> {
+                    let mut value = self.read(platform)?;
+                    f(&mut value);
+                    self.write(platform, value)
+                }
+
+		fn try_set<
+                    P: rust_rpi::Platform<#addr_type, #value_type>,
+                    F: FnOnce(&mut #name) -> Result<(), P::Error>
+                >(
+                    &self,
+                    platform: &P,
+                    f: F,
+                ) -> Result<(), P::Error> {
+                    let mut value = #name::default();
+                    value.reset();
+                    f(&mut value)?;
+                    self.write(platform, value)
+                }
+
+                fn set<
+                    P: rust_rpi::Platform<#addr_type, #value_type>,
+                    F: FnOnce(&mut #name)
+                >(
+                    &self,
+                    platform: &P,
+                    f: F,
+                ) -> Result<(), P::Error> {
+                    let mut value = #name::default();
+                    value.reset();
+                    f(&mut value);
+                    self.write(platform, value)
+                }
+                }
+	        impl core::fmt::Display for #name {
+                    fn fmt(&self, #format_param: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+                        #display_impl
+                        Ok(())
+                    }
+                }
+            })
+        }
     }
 
     fn enumeration(&mut self, e: Arc<crate::ast::Enum>) {
@@ -489,8 +531,9 @@ impl Visitor for CodegenVisitor {
         self.block_definitions.extend(quote! {
             #[doc = #doc]
             #[derive(Default, Debug)]
-            pub struct #block_name {
-                pub addr: #addr_type
+            pub struct #block_name{
+                pub addr: #addr_type,
+                pub copies: u32
             }
         });
 
@@ -529,26 +572,30 @@ impl Visitor for CodegenVisitor {
             let attrs_name = format_ident!("{name}_attrs");
             let type_name = typename_to_qualified_ident(typ, "Instance");
             match &element.component {
-                Component::Single { .. } => {
-                    if block.sram {
-                        tokens.extend(quote! {
-                            #[doc = #doc]
-                            pub fn #method_name(&self) -> #type_name {
-                                #type_name {
-                                    msel_id: #msel_id,
-                                }
-                            }
-                        });
+                Component::Single { id, typ } => {
+                    let method_name =
+                        format_ident!("{}", id.name.to_case(Case::Snake));
+                    let type_name =
+                        typename_to_qualified_ident(typ, "Instance");
+
+                    let contents = if block.sram {
+                        quote! {
+                            msel_id: #msel_id,
+                            addr: self.addr #offset,
+                            copies: 1,
+                        }
                     } else {
-                        tokens.extend(quote! {
-                            #[doc = #doc]
-                            pub fn #method_name(&self) -> #type_name {
-                                #type_name {
-                                    addr: self.addr #offset,
-                                }
-                            }
-                        });
-                    }
+                        quote! {
+                            addr: self.addr #offset,
+                            copies: 1,
+                        }
+                    };
+                    tokens.extend(quote! {
+                        #[doc = #doc]
+                        pub fn #method_name(&self) -> #type_name {
+                            #type_name { #contents }
+                        }
+                    });
                 }
                 Component::Array {
                     length, spacing, ..
@@ -560,29 +607,30 @@ impl Visitor for CodegenVisitor {
                     .unwrap();
                     let length =
                         proc_macro2::Literal::u128_unsuffixed(length.value);
-                    if block.sram {
-                        tokens.extend(quote! {
-                        #[doc = #doc]
-                            pub fn #method_name(&self) -> #type_name {
-                                #type_name {
-                                    msel_id: #msel_id,
-                                }
-                            }
-                        })
+                    let contents = if block.sram {
+                        quote! {
+                            msel_id: #msel_id,
+                            addr: self.addr #offset + (index * #spacing),
+                            copies: #length,
+                        }
                     } else {
-                        tokens.extend(quote! {
+                        quote! {
+                            addr: self.addr #offset + (index * #spacing),
+                            copies: #length,
+                        }
+                    };
+
+                    tokens.extend(quote! {
                         #[doc = #doc]
                         pub fn #method_name(&self, index: #addr_type)
                             -> Result<#type_name, rust_rpi::OutOfRange> {
                             if index > #length {
-                                return Err(rust_rpi::OutOfRange::IndexOutOfRange);
+                                Err(rust_rpi::OutOfRange::IndexOutOfRange)
+                            } else {
+                                Ok(#type_name { #contents })
                             }
-                            Ok(#type_name {
-                                addr: self.addr #offset + (index * #spacing)
-                            })
                         }
                     });
-                    }
                 }
             }
             tokens.extend(attrs_accessor(&attrs_name, &element.attrs));
