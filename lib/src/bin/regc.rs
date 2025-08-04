@@ -1,6 +1,13 @@
+use std::sync::Arc;
+
 use camino::Utf8PathBuf;
 use clap::Parser;
-use rsf::{model::ModelModules, parser::parse};
+use colored::Colorize;
+use rsf::{
+    ast::Identifier,
+    model::{ModelModules, Register, Visitor},
+    parser::parse,
+};
 
 #[derive(Parser, Debug)]
 struct Cli {
@@ -33,4 +40,40 @@ fn main() {
             std::process::exit(1);
         }
     };
+
+    show_register_map(&resolved)
+}
+
+struct RegisterMapVisitor {}
+
+impl Visitor for RegisterMapVisitor {
+    fn register_component(
+        &mut self,
+        id: &Identifier,
+        path: &[Identifier],
+        _reg: Arc<Register>,
+        _array_index: Option<u128>,
+        addr: u128,
+    ) {
+        let name = if path.is_empty() {
+            id.name.cyan().to_string()
+        } else {
+            format!(
+                "{}{}{}",
+                path.iter()
+                    .map(|x| x.name.blue().to_string())
+                    .collect::<Vec<_>>()
+                    .join(":".dimmed().to_string().as_str()),
+                ":".dimmed(),
+                id.name.cyan(),
+            )
+        };
+        let addr = format!("{:08x}", addr);
+        println!("{}{}{} {}", "0x".green(), addr.green(), ":".dimmed(), name);
+    }
+}
+
+fn show_register_map(m: &ModelModules) {
+    let mut visitor = RegisterMapVisitor {};
+    m.root.accept(&mut visitor);
 }
