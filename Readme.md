@@ -16,6 +16,7 @@ RSF comes with
 - A AST form and library interfaces for working with RSF ASTs.
 - A verified model form and library interfaces for writing tooling around RSF.
 - A Rust code generator for creating a register programming interface (RPI).
+- A tool called `regc` for checking and exploring RSF specs.
 
 # Registers
 
@@ -114,3 +115,10 @@ block Nic {
 
 Here the `Phy` component is an array of 4 `Phy`s, where each `Phy` is spaced
 `0x1000` bytes apart starting at an offset of `0x6000` bytes.
+
+## Primitive Types
+
+The following primitive types exist.
+
+- `bool`: Boolean
+- `bN` Bitstring where `N` is any positive nonzero value e.g. `b4`.
