@@ -521,7 +521,7 @@ mod test {
 
         assert_eq!(ast.enums.len(), 1);
         assert_eq!(ast.enums[0].id.name, "Lanes");
-        assert_eq!(ast.enums[0].width.value, 2);
+        assert_eq!(ast.enums[0].width.value, 3);
         assert_eq!(ast.enums[0].alternatives.len(), 5);
         assert_eq!(ast.enums[0].alternatives[0].id.name, "Single");
         assert_eq!(ast.enums[0].alternatives[1].id.name, "L2");

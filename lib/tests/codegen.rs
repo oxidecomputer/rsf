@@ -18,6 +18,15 @@ fn test_codegen() {
         }
     };
     assert_contents("test_data/nic_rpi.rs", &output);
+
+    assert!(
+        !output.contains("unwrap"),
+        "generated code may not contain unwraps"
+    );
+    assert!(
+        !output.contains("expect"),
+        "generated code may not contain expects"
+    );
 }
 
 // Kersplat generated code right here!

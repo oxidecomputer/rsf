@@ -1,5 +1,6 @@
 //! Rust code generation
 
+use crate::ast::Number;
 use crate::common::{FieldMode, NumberFormat, Typename};
 use crate::model::{Block, Component, FieldType, FieldUserType, Register};
 use crate::model::{ModelModules, Visitor};
@@ -198,15 +199,19 @@ impl Visitor for CodegenVisitor {
         let instance_name =
             format_ident!("{}Instance", reg.id.name.to_case(Case::Pascal));
 
+        // TODO: real fix is https://github.com/oxidecomputer/rsf/issues/10
+        //       but for now prefer compile time panic to runtime panic.
+        if let Some(reset_value) = &reg.reset_value {
+            if reset_value.value >= 1 << reg.width.value {
+                panic!("reset value overflows register width");
+            }
+        }
+
         let doc = reg.doc.join("\n");
         let instance_doc = format!("Instance of a [`{}`]", reg.id.name);
-        let aligned = matches!(reg.width.value, 8 | 16 | 32 | 64 | 128);
         let reset = match &reg.reset_value {
             None => quote! { self.0 = BitSet::<#width>::ZERO },
-            Some(v) if aligned => {
-                // If the reset value is the same width as an integer type,
-                // casting the constant to the matching type lets us use an
-                // infallible "from" rather than ".try_from".
+            Some(v) => {
                 let val = match reg.width.value {
                     8 => proc_macro2::Literal::u8_suffixed(v.value as u8),
                     16 => proc_macro2::Literal::u16_suffixed(v.value as u16),
@@ -217,17 +222,9 @@ impl Visitor for CodegenVisitor {
                 };
                 quote! { self.0 = BitSet::<#width>::from(#val) }
             }
-            Some(v) => {
-                let val = proc_macro2::Literal::u128_suffixed(v.value);
-                quote! { self.0 = BitSet::<#width>::try_from(#val).unwrap()}
-            }
         };
 
-        let conversion = if aligned {
-            quote! { BitSet::<#width>::from(value) }
-        } else {
-            quote! { BitSet::<#width>::try_from(value).unwrap() }
-        };
+        let conversion = quote! { BitSet::<#width>::from(value) };
 
         // Condition some methods on width. This allows things like
         // descriptors to be defined that are not managed like regular
@@ -384,26 +381,7 @@ impl Visitor for CodegenVisitor {
         for a in &e.alternatives {
             let doc = a.doc.join("\n");
             let alt_name = format_ident!("{}", a.id.name.to_case(Case::Pascal));
-            let alt_value = match &a.value.format {
-                NumberFormat::Binary { digits } => {
-                    proc_macro2::Literal::from_str(&format!(
-                        "0b{:0width$b}",
-                        a.value.value,
-                        width = digits,
-                    ))
-                }
-                NumberFormat::Hex { digits } => proc_macro2::Literal::from_str(
-                    &format!("0x{:0width$x}", a.value.value, width = digits,),
-                ),
-                NumberFormat::Decimal { digits } => {
-                    proc_macro2::Literal::from_str(&format!(
-                        "{:0width$}",
-                        a.value.value,
-                        width = digits,
-                    ))
-                }
-            }
-            .unwrap();
+            let alt_value = number_to_token(&a.value);
             alts.extend(quote! {
                 #[doc = #doc]
                 #alt_name = #alt_value,
@@ -411,14 +389,20 @@ impl Visitor for CodegenVisitor {
         }
 
         let width = proc_macro2::Literal::u128_unsuffixed(e.width.value);
-        let conversion = match e.width.value {
-            8 | 16 | 32 | 64 => quote! {
-                BitSet::<#width>::from(value as #repr)
-            },
-            _ => quote! {
-                BitSet::<#width>::try_from(value as #repr).unwrap()
-            },
+        let mut alts_conv = Vec::default();
+        for alt in &e.alternatives {
+            let aname = format_ident!("{}", alt.id.name.to_case(Case::Pascal));
+            let value = number_to_token(&alt.value);
+            alts_conv.push(quote! {
+                #name::#aname => bitset_macro::bitset!(#width, #value)
+            });
+        }
+        let conversion = quote! {
+            match value {
+                #(#alts_conv,)*
+            }
         };
+
         self.enum_definitions.extend(quote! {
             #[doc = #doc]
             #[derive(num_enum::TryFromPrimitive, PartialEq, Debug)]
@@ -761,4 +745,19 @@ fn typename_to_qualified_ident(
         .collect::<Vec<_>>();
 
     quote! { #last::#typ }
+}
+
+fn number_to_token(n: &Number) -> proc_macro2::Literal {
+    match &n.format {
+        NumberFormat::Binary { digits } => proc_macro2::Literal::from_str(
+            &format!("0b{:0width$b}", n.value, width = digits,),
+        ),
+        NumberFormat::Hex { digits } => proc_macro2::Literal::from_str(
+            &format!("0x{:0width$x}", n.value, width = digits),
+        ),
+        NumberFormat::Decimal { digits } => proc_macro2::Literal::from_str(
+            &format!("{:0width$}", n.value, width = digits,),
+        ),
+    }
+    .unwrap()
 }

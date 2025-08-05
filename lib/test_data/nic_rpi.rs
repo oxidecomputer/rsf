@@ -24,11 +24,11 @@ impl PhyConfig {
     }
     /// Number of lanes the phy is using.
     pub fn get_lanes(&self) -> Result<Lanes, rust_rpi::OutOfRange> {
-        self.0.get_field::<2, 16>().try_into()
+        self.0.get_field::<3, 16>().try_into()
     }
     /// Number of lanes the phy is using.
     pub fn set_lanes(&mut self, data__: Lanes) {
-        self.0.set_field::<2, 16>(data__.into());
+        self.0.set_field::<3, 16>(data__.into());
     }
     /// Type of forward error correction to use.
     pub fn get_fec(&self) -> Result<ethernet::Fec, rust_rpi::OutOfRange> {
@@ -325,14 +325,20 @@ pub enum Lanes {
     /// Four fiber lanes per phy
     F4 = 0b100,
 }
-impl From<Lanes> for BitSet<2> {
-    fn from(value: Lanes) -> BitSet<2> {
-        BitSet::<2>::try_from(value as u8).unwrap()
+impl From<Lanes> for BitSet<3> {
+    fn from(value: Lanes) -> BitSet<3> {
+        match value {
+            Lanes::Single => bitset_macro::bitset!(3, 0b000),
+            Lanes::L2 => bitset_macro::bitset!(3, 0b001),
+            Lanes::L4 => bitset_macro::bitset!(3, 0b010),
+            Lanes::F2 => bitset_macro::bitset!(3, 0b011),
+            Lanes::F4 => bitset_macro::bitset!(3, 0b100),
+        }
     }
 }
-impl TryFrom<BitSet<2>> for Lanes {
+impl TryFrom<BitSet<3>> for Lanes {
     type Error = rust_rpi::OutOfRange;
-    fn try_from(value: BitSet<2>) -> Result<Self, Self::Error> {
+    fn try_from(value: BitSet<3>) -> Result<Self, Self::Error> {
         Self::try_from(u8::from(value))
             .map_err(|_| rust_rpi::OutOfRange::EnumValueOutOfRange)
     }
@@ -427,7 +433,10 @@ pub mod cei {
     }
     impl From<Modulation> for BitSet<1> {
         fn from(value: Modulation) -> BitSet<1> {
-            BitSet::<1>::try_from(value as u8).unwrap()
+            match value {
+                Modulation::Nrz => bitset_macro::bitset!(1, 0b0),
+                Modulation::Pam4 => bitset_macro::bitset!(1, 0b1),
+            }
         }
     }
     impl TryFrom<BitSet<1>> for Modulation {
@@ -463,7 +472,15 @@ pub mod ethernet {
     }
     impl From<Reach> for BitSet<3> {
         fn from(value: Reach) -> BitSet<3> {
-            BitSet::<3>::try_from(value as u8).unwrap()
+            match value {
+                Reach::Kr => bitset_macro::bitset!(3, 0b000),
+                Reach::Cr => bitset_macro::bitset!(3, 0b001),
+                Reach::Sr => bitset_macro::bitset!(3, 0b010),
+                Reach::Dr => bitset_macro::bitset!(3, 0b011),
+                Reach::Fr => bitset_macro::bitset!(3, 0b100),
+                Reach::Lr => bitset_macro::bitset!(3, 0b101),
+                Reach::Er => bitset_macro::bitset!(3, 0b110),
+            }
         }
     }
     impl TryFrom<BitSet<3>> for Reach {
@@ -486,7 +503,11 @@ pub mod ethernet {
     }
     impl From<Fec> for BitSet<2> {
         fn from(value: Fec) -> BitSet<2> {
-            BitSet::<2>::try_from(value as u8).unwrap()
+            match value {
+                Fec::None => bitset_macro::bitset!(2, 0b00),
+                Fec::Rs => bitset_macro::bitset!(2, 0b01),
+                Fec::Fc => bitset_macro::bitset!(2, 0b10),
+            }
         }
     }
     impl TryFrom<BitSet<2>> for Fec {
@@ -511,7 +532,12 @@ pub mod ethernet {
     }
     impl From<DataRate> for BitSet<2> {
         fn from(value: DataRate) -> BitSet<2> {
-            BitSet::<2>::try_from(value as u8).unwrap()
+            match value {
+                DataRate::G50 => bitset_macro::bitset!(2, 0b00),
+                DataRate::G100 => bitset_macro::bitset!(2, 0b01),
+                DataRate::G200 => bitset_macro::bitset!(2, 0b10),
+                DataRate::G400 => bitset_macro::bitset!(2, 0b11),
+            }
         }
     }
     impl TryFrom<BitSet<2>> for DataRate {

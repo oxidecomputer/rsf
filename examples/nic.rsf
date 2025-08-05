@@ -33,7 +33,7 @@ sram block Firmware {
 }
 
 /// Number of lanes per phy.
-enum<2> Lanes {
+enum<3> Lanes {
     /// One lane per phy
     Single = 0b000,
     /// Two lambda lanes per phy
