@@ -349,6 +349,9 @@ impl Visitor for CodegenVisitor {
 
             impl #name {
                 #fields
+                pub fn value(&self) -> BitSet<#width> {
+                    self.0
+                }
                 pub fn reset(&mut self) {
                     #reset
                 }

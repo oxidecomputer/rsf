@@ -46,6 +46,9 @@ impl PhyConfig {
     pub fn set_modulation(&mut self, data__: cei::Modulation) {
         self.0.set_field::<1, 24>(data__.into());
     }
+    pub fn value(&self) -> BitSet<32> {
+        self.0
+    }
     pub fn reset(&mut self) {
         self.0 = BitSet::<32>::ZERO;
     }
@@ -135,6 +138,9 @@ impl PhyStatus {
     /// Indicates that data in the signal received from the MAU is valid.
     pub fn get_data_valid(&self) -> bool {
         bool::from(self.0.get_field::<1, 2>())
+    }
+    pub fn value(&self) -> BitSet<32> {
+        self.0
     }
     pub fn reset(&mut self) {
         self.0 = BitSet::<32>::ZERO;
@@ -235,6 +241,9 @@ impl Debug {
     /// debug field
     pub fn set_value(&mut self, data__: BitSet<32>) {
         self.0.set_field::<32, 0>(data__);
+    }
+    pub fn value(&self) -> BitSet<32> {
+        self.0
     }
     pub fn reset(&mut self) {
         self.0 = BitSet::<32>::from(4294967295u32);
@@ -574,6 +583,9 @@ pub mod version {
         /// Version number
         pub fn get_value(&self) -> BitSet<32> {
             self.0.get_field::<32, 0>()
+        }
+        pub fn value(&self) -> BitSet<32> {
+            self.0
         }
         pub fn reset(&mut self) {
             self.0 = BitSet::<32>::ZERO;
