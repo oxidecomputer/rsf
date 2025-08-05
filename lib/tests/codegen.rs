@@ -8,7 +8,7 @@ use rsf::rust_codegen::{AddrType, ValueType};
 #[test]
 fn test_codegen() {
     let output = match rsf::rust_codegen::codegen(
-        "examples/nic.rsf".into(),
+        "../examples/nic.rsf".into(),
         AddrType::U32,
         ValueType::U32,
     ) {
@@ -51,7 +51,7 @@ fn run_generated_code() -> anyhow::Result<()> {
 
     // Read some config, status
     let config = rpi.phys(1)?.config().read(&platform).unwrap();
-    assert_eq!(config.get_speed(), ethernet::DataRate::G50);
+    assert_eq!(config.get_speed().unwrap(), ethernet::DataRate::G50);
 
     let status = rpi.phys(2)?.status().read(&platform).unwrap();
     assert!(!status.get_carrier());

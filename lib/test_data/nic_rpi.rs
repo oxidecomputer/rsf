@@ -1,5 +1,5 @@
 use bitset::BitSet;
-use rsf::rust_rpi;
+use rust_rpi;
 #[derive(Default, Debug)]
 /** Configuration for an Ethernet physical interface (phy).
 
@@ -7,44 +7,44 @@ use rsf::rust_rpi;
 pub struct PhyConfig(BitSet<32>);
 impl PhyConfig {
     /// Data rate the phy is operating at.
-    pub fn get_speed(&self) -> ethernet::DataRate {
-        self.0.get_field::<2, 0>().unwrap().try_into().unwrap()
+    pub fn get_speed(&self) -> Result<ethernet::DataRate, rust_rpi::OutOfRange> {
+        self.0.get_field::<2, 0>().try_into()
     }
     /// Data rate the phy is operating at.
     pub fn set_speed(&mut self, data__: ethernet::DataRate) {
-        self.0.set_field::<2, 0>(data__.into()).unwrap();
+        self.0.set_field::<2, 0>(data__.into());
     }
     /// Signal reach the phy is configured for.
-    pub fn get_reach(&self) -> ethernet::Reach {
-        self.0.get_field::<3, 8>().unwrap().try_into().unwrap()
+    pub fn get_reach(&self) -> Result<ethernet::Reach, rust_rpi::OutOfRange> {
+        self.0.get_field::<3, 8>().try_into()
     }
     /// Signal reach the phy is configured for.
     pub fn set_reach(&mut self, data__: ethernet::Reach) {
-        self.0.set_field::<3, 8>(data__.into()).unwrap();
+        self.0.set_field::<3, 8>(data__.into());
     }
     /// Number of lanes the phy is using.
-    pub fn get_lanes(&self) -> Lanes {
-        self.0.get_field::<2, 16>().unwrap().try_into().unwrap()
+    pub fn get_lanes(&self) -> Result<Lanes, rust_rpi::OutOfRange> {
+        self.0.get_field::<2, 16>().try_into()
     }
     /// Number of lanes the phy is using.
     pub fn set_lanes(&mut self, data__: Lanes) {
-        self.0.set_field::<2, 16>(data__.into()).unwrap();
+        self.0.set_field::<2, 16>(data__.into());
     }
     /// Type of forward error correction to use.
-    pub fn get_fec(&self) -> ethernet::Fec {
-        self.0.get_field::<2, 20>().unwrap().try_into().unwrap()
+    pub fn get_fec(&self) -> Result<ethernet::Fec, rust_rpi::OutOfRange> {
+        self.0.get_field::<2, 20>().try_into()
     }
     /// Type of forward error correction to use.
     pub fn set_fec(&mut self, data__: ethernet::Fec) {
-        self.0.set_field::<2, 20>(data__.into()).unwrap();
+        self.0.set_field::<2, 20>(data__.into());
     }
     /// Type of modulation used on the wire.
-    pub fn get_modulation(&self) -> cei::Modulation {
-        self.0.get_field::<1, 24>().unwrap().try_into().unwrap()
+    pub fn get_modulation(&self) -> Result<cei::Modulation, rust_rpi::OutOfRange> {
+        self.0.get_field::<1, 24>().try_into()
     }
     /// Type of modulation used on the wire.
     pub fn set_modulation(&mut self, data__: cei::Modulation) {
-        self.0.set_field::<1, 24>(data__.into()).unwrap();
+        self.0.set_field::<1, 24>(data__.into());
     }
     pub fn reset(&mut self) {
         self.0 = BitSet::<32>::ZERO;
@@ -83,6 +83,23 @@ impl rust_rpi::RegisterInstance<PhyConfig, u32, u32> for PhyConfigInstance {
     ) -> Result<(), P::Error> {
         platform.write(self.addr, value)
     }
+    fn try_update<
+        P: rust_rpi::Platform<u32, u32>,
+        F: FnOnce(&mut PhyConfig) -> Result<(), P::Error>,
+    >(&self, platform: &P, f: F) -> Result<(), P::Error> {
+        let mut value = self.read(platform)?;
+        f(&mut value)?;
+        self.write(platform, value)
+    }
+    fn update<P: rust_rpi::Platform<u32, u32>, F: FnOnce(&mut PhyConfig)>(
+        &self,
+        platform: &P,
+        f: F,
+    ) -> Result<(), P::Error> {
+        let mut value = self.read(platform)?;
+        f(&mut value);
+        self.write(platform, value)
+    }
     fn try_set<
         P: rust_rpi::Platform<u32, u32>,
         F: FnOnce(&mut PhyConfig) -> Result<(), P::Error>,
@@ -102,23 +119,6 @@ impl rust_rpi::RegisterInstance<PhyConfig, u32, u32> for PhyConfigInstance {
         f(&mut value);
         self.write(platform, value)
     }
-    fn try_update<
-        P: rust_rpi::Platform<u32, u32>,
-        F: FnOnce(&mut PhyConfig) -> Result<(), P::Error>,
-    >(&self, platform: &P, f: F) -> Result<(), P::Error> {
-        let mut value = self.read(platform)?;
-        f(&mut value)?;
-        self.write(platform, value)
-    }
-    fn update<P: rust_rpi::Platform<u32, u32>, F: FnOnce(&mut PhyConfig)>(
-        &self,
-        platform: &P,
-        f: F,
-    ) -> Result<(), P::Error> {
-        let mut value = self.read(platform)?;
-        f(&mut value);
-        self.write(platform, value)
-    }
 }
 #[derive(Default, Debug)]
 /// Status of an Ethernet physical interface (phy).
@@ -126,15 +126,15 @@ pub struct PhyStatus(BitSet<32>);
 impl PhyStatus {
     /// Indicates if a carrier signal is detected.
     pub fn get_carrier(&self) -> bool {
-        bool::from(self.0.get_field::<1, 0>().unwrap())
+        bool::from(self.0.get_field::<1, 0>())
     }
     /// Indicates if a signal error has been recieved by the MAU.
     pub fn get_signal_error(&self) -> bool {
-        bool::from(self.0.get_field::<1, 1>().unwrap())
+        bool::from(self.0.get_field::<1, 1>())
     }
     /// Indicates that data in the signal received from the MAU is valid.
     pub fn get_data_valid(&self) -> bool {
-        bool::from(self.0.get_field::<1, 2>().unwrap())
+        bool::from(self.0.get_field::<1, 2>())
     }
     pub fn reset(&mut self) {
         self.0 = BitSet::<32>::ZERO;
@@ -173,6 +173,23 @@ impl rust_rpi::RegisterInstance<PhyStatus, u32, u32> for PhyStatusInstance {
     ) -> Result<(), P::Error> {
         platform.write(self.addr, value)
     }
+    fn try_update<
+        P: rust_rpi::Platform<u32, u32>,
+        F: FnOnce(&mut PhyStatus) -> Result<(), P::Error>,
+    >(&self, platform: &P, f: F) -> Result<(), P::Error> {
+        let mut value = self.read(platform)?;
+        f(&mut value)?;
+        self.write(platform, value)
+    }
+    fn update<P: rust_rpi::Platform<u32, u32>, F: FnOnce(&mut PhyStatus)>(
+        &self,
+        platform: &P,
+        f: F,
+    ) -> Result<(), P::Error> {
+        let mut value = self.read(platform)?;
+        f(&mut value);
+        self.write(platform, value)
+    }
     fn try_set<
         P: rust_rpi::Platform<u32, u32>,
         F: FnOnce(&mut PhyStatus) -> Result<(), P::Error>,
@@ -189,23 +206,6 @@ impl rust_rpi::RegisterInstance<PhyStatus, u32, u32> for PhyStatusInstance {
     ) -> Result<(), P::Error> {
         let mut value = PhyStatus::default();
         value.reset();
-        f(&mut value);
-        self.write(platform, value)
-    }
-    fn try_update<
-        P: rust_rpi::Platform<u32, u32>,
-        F: FnOnce(&mut PhyStatus) -> Result<(), P::Error>,
-    >(&self, platform: &P, f: F) -> Result<(), P::Error> {
-        let mut value = self.read(platform)?;
-        f(&mut value)?;
-        self.write(platform, value)
-    }
-    fn update<P: rust_rpi::Platform<u32, u32>, F: FnOnce(&mut PhyStatus)>(
-        &self,
-        platform: &P,
-        f: F,
-    ) -> Result<(), P::Error> {
-        let mut value = self.read(platform)?;
         f(&mut value);
         self.write(platform, value)
     }
@@ -230,11 +230,11 @@ pub struct Debug(BitSet<32>);
 impl Debug {
     /// debug field
     pub fn get_value(&self) -> BitSet<32> {
-        self.0.get_field::<32, 0>().unwrap()
+        self.0.get_field::<32, 0>()
     }
     /// debug field
     pub fn set_value(&mut self, data__: BitSet<32>) {
-        self.0.set_field::<32, 0>(data__).unwrap();
+        self.0.set_field::<32, 0>(data__);
     }
     pub fn reset(&mut self) {
         self.0 = BitSet::<32>::from(4294967295u32);
@@ -273,6 +273,23 @@ impl rust_rpi::RegisterInstance<Debug, u32, u32> for DebugInstance {
     ) -> Result<(), P::Error> {
         platform.write(self.addr, value)
     }
+    fn try_update<
+        P: rust_rpi::Platform<u32, u32>,
+        F: FnOnce(&mut Debug) -> Result<(), P::Error>,
+    >(&self, platform: &P, f: F) -> Result<(), P::Error> {
+        let mut value = self.read(platform)?;
+        f(&mut value)?;
+        self.write(platform, value)
+    }
+    fn update<P: rust_rpi::Platform<u32, u32>, F: FnOnce(&mut Debug)>(
+        &self,
+        platform: &P,
+        f: F,
+    ) -> Result<(), P::Error> {
+        let mut value = self.read(platform)?;
+        f(&mut value);
+        self.write(platform, value)
+    }
     fn try_set<
         P: rust_rpi::Platform<u32, u32>,
         F: FnOnce(&mut Debug) -> Result<(), P::Error>,
@@ -289,23 +306,6 @@ impl rust_rpi::RegisterInstance<Debug, u32, u32> for DebugInstance {
     ) -> Result<(), P::Error> {
         let mut value = Debug::default();
         value.reset();
-        f(&mut value);
-        self.write(platform, value)
-    }
-    fn try_update<
-        P: rust_rpi::Platform<u32, u32>,
-        F: FnOnce(&mut Debug) -> Result<(), P::Error>,
-    >(&self, platform: &P, f: F) -> Result<(), P::Error> {
-        let mut value = self.read(platform)?;
-        f(&mut value)?;
-        self.write(platform, value)
-    }
-    fn update<P: rust_rpi::Platform<u32, u32>, F: FnOnce(&mut Debug)>(
-        &self,
-        platform: &P,
-        f: F,
-    ) -> Result<(), P::Error> {
-        let mut value = self.read(platform)?;
         f(&mut value);
         self.write(platform, value)
     }
@@ -415,7 +415,7 @@ impl PhyInstance {
 }
 pub mod cei {
     use bitset::BitSet;
-    use rsf::rust_rpi;
+    use rust_rpi;
     /// Supported signal modulation types.
     #[derive(num_enum::TryFromPrimitive, PartialEq, Debug)]
     #[repr(u8)]
@@ -441,7 +441,7 @@ pub mod cei {
 pub mod ethernet {
     use super::version;
     use bitset::BitSet;
-    use rsf::rust_rpi;
+    use rust_rpi;
     /// Reach of a signal.
     #[derive(num_enum::TryFromPrimitive, PartialEq, Debug)]
     #[repr(u8)]
@@ -540,14 +540,14 @@ pub mod ethernet {
 }
 pub mod version {
     use bitset::BitSet;
-    use rsf::rust_rpi;
+    use rust_rpi;
     #[derive(Default, Debug)]
     /// Version number
     pub struct Version(BitSet<32>);
     impl Version {
         /// Version number
         pub fn get_value(&self) -> BitSet<32> {
-            self.0.get_field::<32, 0>().unwrap()
+            self.0.get_field::<32, 0>()
         }
         pub fn reset(&mut self) {
             self.0 = BitSet::<32>::ZERO;
@@ -586,6 +586,23 @@ pub mod version {
         ) -> Result<(), P::Error> {
             platform.write(self.addr, value)
         }
+        fn try_update<
+            P: rust_rpi::Platform<u32, u32>,
+            F: FnOnce(&mut Version) -> Result<(), P::Error>,
+        >(&self, platform: &P, f: F) -> Result<(), P::Error> {
+            let mut value = self.read(platform)?;
+            f(&mut value)?;
+            self.write(platform, value)
+        }
+        fn update<P: rust_rpi::Platform<u32, u32>, F: FnOnce(&mut Version)>(
+            &self,
+            platform: &P,
+            f: F,
+        ) -> Result<(), P::Error> {
+            let mut value = self.read(platform)?;
+            f(&mut value);
+            self.write(platform, value)
+        }
         fn try_set<
             P: rust_rpi::Platform<u32, u32>,
             F: FnOnce(&mut Version) -> Result<(), P::Error>,
@@ -602,23 +619,6 @@ pub mod version {
         ) -> Result<(), P::Error> {
             let mut value = Version::default();
             value.reset();
-            f(&mut value);
-            self.write(platform, value)
-        }
-        fn try_update<
-            P: rust_rpi::Platform<u32, u32>,
-            F: FnOnce(&mut Version) -> Result<(), P::Error>,
-        >(&self, platform: &P, f: F) -> Result<(), P::Error> {
-            let mut value = self.read(platform)?;
-            f(&mut value)?;
-            self.write(platform, value)
-        }
-        fn update<P: rust_rpi::Platform<u32, u32>, F: FnOnce(&mut Version)>(
-            &self,
-            platform: &P,
-            f: F,
-        ) -> Result<(), P::Error> {
-            let mut value = self.read(platform)?;
             f(&mut value);
             self.write(platform, value)
         }

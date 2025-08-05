@@ -24,9 +24,10 @@ clap.workspace = true
 regex.workspace = true
 
 [dev-dependencies]
+rust_rpi = { path = "../rust_rpi" }
 expectorate.workspace = true
 
 [features]
-default = ["test_generated"]
+default = []
 test_generated = []
 

@@ -82,7 +82,7 @@ checksum = "5c8214115b7bf84099f1309324e63141d4c5d7cc26862f97a0a857dbefe165bd"
 [[package]]
 name = "bitset"
 version = "0.1.0"
-source = "git+https://github.com/oxidecomputer/bitset#f8ff5bf713ad3950dd12d8fe98a34897fb2795d9"
+source = "git+https://github.com/oxidecomputer/bitset?branch=no_std#2c5766963b8685681c795abaaaea012dcbcdf6b7"
 dependencies = [
  "bitset-macro",
  "seq-macro",
@@ -91,7 +91,7 @@ dependencies = [
 [[package]]
 name = "bitset-macro"
 version = "0.1.0"
-source = "git+https://github.com/oxidecomputer/bitset#f8ff5bf713ad3950dd12d8fe98a34897fb2795d9"
+source = "git+https://github.com/oxidecomputer/bitset?branch=no_std#2c5766963b8685681c795abaaaea012dcbcdf6b7"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -455,6 +455,7 @@ dependencies = [
  "proc-macro2",
  "quote",
  "regex",
+ "rust_rpi",
  "syn",
  "thiserror",
  "winnow",

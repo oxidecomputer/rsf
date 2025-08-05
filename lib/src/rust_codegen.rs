@@ -174,8 +174,8 @@ impl Visitor for CodegenVisitor {
                     {
                         fields.extend(quote! {
                             #[doc = #doc]
-                            pub fn #getter(&self) -> #typename {
-                                self.0.get_field::<#width, #offset>().try_into().unwrap()
+                            pub fn #getter(&self) -> Result<#typename, rust_rpi::OutOfRange> {
+                                self.0.get_field::<#width, #offset>().try_into()
                             }
                         });
                     }
