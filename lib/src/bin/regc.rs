@@ -1,18 +1,45 @@
-use std::sync::Arc;
-
 use camino::Utf8PathBuf;
-use clap::Parser;
+use clap::{Parser, Subcommand};
 use colored::Colorize;
 use rsf::{
     ast::Identifier,
     model::{ModelModules, Register, Visitor},
     parser::parse,
 };
+use std::num::ParseIntError;
+use std::sync::Arc;
 
 #[derive(Parser, Debug)]
 struct Cli {
     /// Filename of the spec
     spec: Utf8PathBuf,
+
+    /// Command to execute
+    #[command(subcommand)]
+    command: Commands,
+}
+
+#[derive(Subcommand, Debug)]
+pub enum Commands {
+    /// Print an address map of the register space
+    AddrMap(AddrMap),
+
+    /// Print information about a register
+    RegInfo(RegInfo),
+}
+
+#[derive(Parser, Debug)]
+pub struct AddrMap {}
+
+#[derive(Parser, Debug)]
+pub struct RegInfo {
+    /// Name of the register to show
+    #[clap(long, conflicts_with = "address")]
+    name: Option<String>,
+
+    /// Address of the register to show. Hex or decimal values accepted.
+    #[clap(long, conflicts_with = "name", value_parser = parse_hex_or_dec)]
+    address: Option<u128>,
 }
 
 fn main() {
@@ -40,13 +67,34 @@ fn main() {
             std::process::exit(1);
         }
     };
-
-    show_register_map(&resolved)
+    match args.command {
+        Commands::AddrMap(_) => {
+            show_register_map(&resolved);
+        }
+        Commands::RegInfo(cmd) => {
+            if let Some(name) = cmd.name {
+                let mut v = RegInfoVisitor {
+                    matcher: RegInfoMatch::Name(name),
+                };
+                resolved.root.accept(&mut v);
+            }
+            if let Some(addr) = cmd.address {
+                let mut v = RegInfoVisitor {
+                    matcher: RegInfoMatch::Addr(addr),
+                };
+                resolved.root.accept(&mut v);
+            };
+        }
+    };
 }
 
-struct RegisterMapVisitor {}
+fn show_register_map(m: &ModelModules) {
+    let mut visitor = RegMapVisitor {};
+    m.root.accept(&mut visitor);
+}
 
-impl Visitor for RegisterMapVisitor {
+struct RegMapVisitor {}
+impl Visitor for RegMapVisitor {
     fn register_component(
         &mut self,
         id: &Identifier,
@@ -73,7 +121,59 @@ impl Visitor for RegisterMapVisitor {
     }
 }
 
-fn show_register_map(m: &ModelModules) {
-    let mut visitor = RegisterMapVisitor {};
-    m.root.accept(&mut visitor);
+enum RegInfoMatch {
+    Name(String),
+    Addr(u128),
+}
+
+struct RegInfoVisitor {
+    matcher: RegInfoMatch,
+}
+
+impl Visitor for RegInfoVisitor {
+    fn register_component(
+        &mut self,
+        id: &Identifier,
+        path: &[Identifier],
+        reg: Arc<Register>,
+        _array_index: Option<u128>,
+        addr: u128,
+    ) {
+        match &self.matcher {
+            RegInfoMatch::Name(name) => {
+                let re = regex::Regex::new(name).expect("valid regex");
+                let fullpath = if path.is_empty() {
+                    id.name.clone()
+                } else {
+                    format!(
+                        "{}:{}",
+                        path.iter()
+                            .map(|x| x.name.as_str())
+                            .collect::<Vec<_>>()
+                            .join(":"),
+                        id.name,
+                    )
+                };
+                if re.is_match(fullpath.as_str()) {
+                    println!("{}", format!("0x{:x}", addr).green());
+                    println!("{}", reg);
+                }
+            }
+            RegInfoMatch::Addr(a) => {
+                if *a == addr {
+                    println!("{}", format!("0x{:x}", addr).green());
+                    println!("{}", reg);
+                }
+            }
+        }
+    }
+}
+
+fn parse_hex_or_dec(s: &str) -> Result<u128, ParseIntError> {
+    if let Some(hex_str) = s.strip_prefix("0x").or_else(|| s.strip_prefix("0X"))
+    {
+        u128::from_str_radix(hex_str, 16)
+    } else {
+        s.parse::<u128>()
+    }
 }
