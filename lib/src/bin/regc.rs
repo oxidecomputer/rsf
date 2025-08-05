@@ -116,7 +116,7 @@ impl Visitor for RegMapVisitor {
                 id.name.cyan(),
             )
         };
-        let addr = format!("{:08x}", addr);
+        let addr = format!("{addr:08x}");
         println!("{}{}{} {}", "0x".green(), addr.green(), ":".dimmed(), name);
     }
 }
@@ -155,14 +155,14 @@ impl Visitor for RegInfoVisitor {
                     )
                 };
                 if re.is_match(fullpath.as_str()) {
-                    println!("{}", format!("0x{:x}", addr).green());
-                    println!("{}", reg);
+                    println!("{}", format!("0x{addr:x}").green());
+                    println!("{reg}");
                 }
             }
             RegInfoMatch::Addr(a) => {
                 if *a == addr {
-                    println!("{}", format!("0x{:x}", addr).green());
-                    println!("{}", reg);
+                    println!("{}", format!("0x{addr:x}").green());
+                    println!("{reg}");
                 }
             }
         }

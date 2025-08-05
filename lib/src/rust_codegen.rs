@@ -16,8 +16,8 @@ use std::sync::Arc;
 
 #[derive(Default)]
 struct CodegenVisitor {
-    addr_type: TokenStream,
-    value_type: TokenStream,
+    addr_type: AddrType,
+    value_type: ValueType,
     prelude: TokenStream,
     register_definitions: TokenStream,
     enum_definitions: TokenStream,
@@ -192,8 +192,8 @@ impl Visitor for CodegenVisitor {
                 }
             }
         }
-        let addr_type = &self.addr_type;
-        let value_type = &self.value_type;
+        let addr_type: TokenStream = self.addr_type.into();
+        let value_type: TokenStream = self.value_type.into();
 
         let instance_name =
             format_ident!("{}Instance", reg.id.name.to_case(Case::Pascal));
@@ -229,6 +229,121 @@ impl Visitor for CodegenVisitor {
             quote! { BitSet::<#width>::try_from(value).unwrap() }
         };
 
+        // Condition some methods on width. This allows things like
+        // descriptors to be defined that are not managed like regular
+        // registers through platform traits, but it is nonetheless useful
+        // to have codgen for the data structures. This is particularly valuable
+        // for DMA data structures.
+        //
+        // TODO: maybe there should be a more explicit `dma` qualifier instead.
+        // Similar to the `sram` qualifier.
+        let to_from_value = if reg.width.value <= u128::from(self.value_type) {
+            quote! {
+                impl From<#value_type> for #name {
+                    fn from(value: #value_type) -> Self {
+                        //TODO should be fallible
+                        Self(#conversion)
+                    }
+                }
+
+                impl From<#name> for #value_type {
+                    fn from(value: #name) -> Self {
+                        //TODO it's not obvious without looking here that value_type
+                        // should be an integer of some kind
+                        #value_type::from(value.0)
+                    }
+                }
+            }
+        } else {
+            quote! {}
+        };
+
+        let rpi_impl = if reg.width.value <= u128::from(self.value_type) {
+            quote! {
+                impl rust_rpi::RegisterInstance<#name, #addr_type, #value_type> for #instance_name {
+                    fn cons(&self) -> #name {
+                        let mut v = #name::default();
+                        v.reset();
+                        v
+                    }
+
+                    fn read<
+                        P: rust_rpi::Platform<#addr_type, #value_type>,
+                    >(
+                        &self,
+                        platform: &P,
+                    ) -> Result<#name, P::Error> {
+                        platform.read(self.addr)
+                    }
+
+                    fn write<
+                        P: rust_rpi::Platform<#addr_type, #value_type>,
+                    >(
+                        &self,
+                        platform: &P,
+                        value: #name,
+                    ) -> Result<(), P::Error> {
+                        platform.write(self.addr, value)
+                    }
+
+                    fn try_update<
+                        P: rust_rpi::Platform<#addr_type, #value_type>,
+                        F: FnOnce(&mut #name) -> Result<(), P::Error>
+                    >(
+                        &self,
+                        platform: &P,
+                        f: F,
+                    ) -> Result<(), P::Error> {
+                        let mut value = self.read(platform)?;
+                        f(&mut value)?;
+                        self.write(platform, value)
+                    }
+
+                    fn update<
+                        P: rust_rpi::Platform<#addr_type, #value_type>,
+                        F: FnOnce(&mut #name)
+                    >(
+                        &self,
+                        platform: &P,
+                        f: F,
+                    ) -> Result<(), P::Error> {
+                        let mut value = self.read(platform)?;
+                        f(&mut value);
+                        self.write(platform, value)
+                    }
+                    fn try_set<
+                        P: rust_rpi::Platform<#addr_type, #value_type>,
+                        F: FnOnce(&mut #name) -> Result<(), P::Error>
+                    >(
+                        &self,
+                        platform: &P,
+                        f: F,
+                    ) -> Result<(), P::Error> {
+                        let mut value = #name::default();
+                        value.reset();
+                        f(&mut value)?;
+                        self.write(platform, value)
+                    }
+
+                    fn set<
+                        P: rust_rpi::Platform<#addr_type, #value_type>,
+                        F: FnOnce(&mut #name)
+                    >(
+                        &self,
+                        platform: &P,
+                        f: F,
+                    ) -> Result<(), P::Error> {
+                        let mut value = #name::default();
+                        value.reset();
+                        f(&mut value);
+                        self.write(platform, value)
+                    }
+                }
+            }
+        } else {
+            quote! {}
+        };
+
         self.register_definitions.extend(quote! {
 
             #[derive(Default, Debug)]
@@ -242,106 +357,14 @@ impl Visitor for CodegenVisitor {
                 }
             }
 
-            impl From<#value_type> for #name {
-                fn from(value: #value_type) -> Self {
-                    //TODO should be fallible
-                    Self(#conversion)
-                }
-            }
-
-            impl From<#name> for #value_type {
-                fn from(value: #name) -> Self {
-                    //TODO it's not obvious without looking here that value_type
-                    // should be an integer of some kind
-                    #value_type::from(value.0)
-                }
-            }
+            #to_from_value
 
             #[doc = #instance_doc]
             pub struct #instance_name {
                 pub addr: #addr_type,
             }
 
-            impl rust_rpi::RegisterInstance<#name, #addr_type, #value_type> for #instance_name {
-                fn cons(&self) -> #name {
-                    let mut v = #name::default();
-                    v.reset();
-        		    v
-                }
-
-                fn read<
-                    P: rust_rpi::Platform<#addr_type, #value_type>,
-                >(
-                    &self,
-                    platform: &P,
-                ) -> Result<#name, P::Error> {
-                    platform.read(self.addr)
-                }
-
-                fn write<
-                    P: rust_rpi::Platform<#addr_type, #value_type>,
-                >(
-                    &self,
-                    platform: &P,
-                    value: #name,
-                ) -> Result<(), P::Error> {
-                    platform.write(self.addr, value)
-                }
-
-		fn try_set<
-                    P: rust_rpi::Platform<#addr_type, #value_type>,
-                    F: FnOnce(&mut #name) -> Result<(), P::Error>
-                >(
-                    &self,
-                    platform: &P,
-                    f: F,
-                ) -> Result<(), P::Error> {
-                    let mut value = #name::default();
-                    value.reset();
-                    f(&mut value)?;
-                    self.write(platform, value)
-                }
-
-                fn set<
-                    P: rust_rpi::Platform<#addr_type, #value_type>,
-                    F: FnOnce(&mut #name)
-                >(
-                    &self,
-                    platform: &P,
-                    f: F,
-                ) -> Result<(), P::Error> {
-                    let mut value = #name::default();
-                    value.reset();
-                    f(&mut value);
-                    self.write(platform, value)
-                }
-
-                fn try_update<
-                    P: rust_rpi::Platform<#addr_type, #value_type>,
-                    F: FnOnce(&mut #name) -> Result<(), P::Error>
-                >(
-                    &self,
-                    platform: &P,
-                    f: F,
-                ) -> Result<(), P::Error> {
-                    let mut value = self.read(platform)?;
-                    f(&mut value)?;
-                    self.write(platform, value)
-                }
-
-                fn update<
-                    P: rust_rpi::Platform<#addr_type, #value_type>,
-                    F: FnOnce(&mut #name)
-                >(
-                    &self,
-                    platform: &P,
-                    f: F,
-                ) -> Result<(), P::Error> {
-                    let mut value = self.read(platform)?;
-                    f(&mut value);
-                    self.write(platform, value)
-                }
-            }
+            #rpi_impl
         })
     }
 
@@ -436,7 +459,7 @@ impl Visitor for CodegenVisitor {
 
         let current_block = name.to_owned();
 
-        let addr_type = &self.addr_type;
+        let addr_type: TokenStream = self.addr_type.into();
         let doc = block.doc.join("\n");
 
         self.block_definitions.extend(quote! {
@@ -559,10 +582,12 @@ impl Visitor for CodegenVisitor {
 }
 
 /// The address type to be used for register access in generated code.
+#[derive(Copy, Clone, Default)]
 pub enum AddrType {
     U8,
     U16,
     U32,
+    #[default]
     U64,
     U128,
 }
@@ -580,10 +605,12 @@ impl From<AddrType> for TokenStream {
 }
 
 /// The value type to be used for register access in generated code.
+#[derive(Copy, Clone, Default)]
 pub enum ValueType {
     U8,
     U16,
     U32,
+    #[default]
     U64,
     U128,
 }
@@ -600,6 +627,18 @@ impl From<ValueType> for TokenStream {
     }
 }
 
+impl From<ValueType> for u128 {
+    fn from(value: ValueType) -> Self {
+        match value {
+            ValueType::U8 => 8,
+            ValueType::U16 => 16,
+            ValueType::U32 => 32,
+            ValueType::U64 => 64,
+            ValueType::U128 => 128,
+        }
+    }
+}
+
 pub fn codegen(
     file: &Utf8Path,
     addr_type: AddrType,
@@ -608,22 +647,18 @@ pub fn codegen(
     let ast = crate::parser::parse(file)?;
     let resolved = ModelModules::resolve(&ast, String::default())?;
     let modules = resolved.get_modules()?;
-    generate_rpi(&modules, addr_type.into(), value_type.into())
+    generate_rpi(&modules, addr_type, value_type)
 }
 
 pub fn generate_rpi(
     modules: &BTreeMap<String, Arc<ModelModules>>,
-    addr_type: TokenStream,
-    value_type: TokenStream,
+    addr_type: AddrType,
+    value_type: ValueType,
 ) -> Result<String> {
     let mut tokens = TokenStream::new();
     for (name, module) in modules {
-        let model_tokens = generate_rpi_rec(
-            name.to_string(),
-            module,
-            addr_type.clone(),
-            value_type.clone(),
-        )?;
+        let model_tokens =
+            generate_rpi_rec(name.to_string(), module, addr_type, value_type)?;
         tokens.extend(quote! {
             #model_tokens
         });
@@ -652,12 +687,12 @@ pub fn generate_rpi(
 pub fn generate_rpi_rec(
     name: String,
     model: &ModelModules,
-    addr_type: TokenStream,
-    value_type: TokenStream,
+    addr_type: AddrType,
+    value_type: ValueType,
 ) -> Result<TokenStream> {
     let mut cgv = CodegenVisitor {
-        addr_type: addr_type.clone(),
-        value_type: value_type.clone(),
+        addr_type,
+        value_type,
         prelude: use_statements(),
         ..Default::default()
     };
