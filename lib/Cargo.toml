@@ -21,6 +21,7 @@ bitset-macro.workspace = true
 thiserror.workspace = true
 petgraph.workspace = true
 clap.workspace = true
+regex.workspace = true
 
 [dev-dependencies]
 expectorate.workspace = true

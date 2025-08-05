@@ -101,7 +101,7 @@ impl Visitor for CodegenVisitor {
                         fields.extend(quote! {
                             #[doc = #doc]
                             pub fn #getter(&self) -> bool {
-                                bool::from(self.0.get_field::<#width, #offset>().unwrap())
+                                bool::from(self.0.get_field::<#width, #offset>())
                             }
                         });
                     }
@@ -111,7 +111,7 @@ impl Visitor for CodegenVisitor {
                         fields.extend(quote! {
                             #[doc = #doc]
                             pub fn #setter(&mut self, data__: bool) {
-                                self.0.set_field::<#width, #offset>(BitSet::<#width>::from(data__)).unwrap();
+                                self.0.set_field::<#width, #offset>(BitSet::<#width>::from(data__));
                             }
                         })
                     }
@@ -128,7 +128,7 @@ impl Visitor for CodegenVisitor {
                         fields.extend(quote! {
                             #[doc = #doc]
                             pub fn #getter(&self) -> BitSet<#width> {
-                                self.0.get_field::<#width, #offset>().unwrap()
+                                self.0.get_field::<#width, #offset>()
                             }
                         });
                     }
@@ -138,7 +138,7 @@ impl Visitor for CodegenVisitor {
                         fields.extend(quote! {
                             #[doc = #doc]
                             pub fn #setter(&mut self, data__: BitSet<#width>) {
-                                self.0.set_field::<#width, #offset>(data__).unwrap();
+                                self.0.set_field::<#width, #offset>(data__);
                             }
                         })
                     }
@@ -175,7 +175,7 @@ impl Visitor for CodegenVisitor {
                         fields.extend(quote! {
                             #[doc = #doc]
                             pub fn #getter(&self) -> #typename {
-                                self.0.get_field::<#width, #offset>().unwrap().try_into().unwrap()
+                                self.0.get_field::<#width, #offset>().try_into().unwrap()
                             }
                         });
                     }
@@ -185,7 +185,7 @@ impl Visitor for CodegenVisitor {
                         fields.extend(quote! {
                             #[doc = #doc]
                             pub fn #setter(&mut self, data__: #typename) {
-                                self.0.set_field::<#width, #offset>(data__.into()).unwrap();
+                                self.0.set_field::<#width, #offset>(data__.into());
                             }
                         })
                     }
