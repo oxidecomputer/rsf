@@ -201,10 +201,10 @@ impl Visitor for CodegenVisitor {
 
         // TODO: real fix is https://github.com/oxidecomputer/rsf/issues/10
         //       but for now prefer compile time panic to runtime panic.
-        if let Some(reset_value) = &reg.reset_value {
-            if reset_value.value >= 1 << reg.width.value {
-                panic!("reset value overflows register width");
-            }
+        if let Some(reset_value) = &reg.reset_value
+            && reset_value.value >= 1 << reg.width.value
+        {
+            panic!("reset value overflows register width");
         }
 
         let doc = reg.doc.join("\n");
