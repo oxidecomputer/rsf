@@ -131,6 +131,15 @@ pub enum Component<T> {
     },
 }
 
+impl<T> Component<T> {
+    pub fn id(&self) -> &Identifier {
+        match self {
+            Self::Single { id, .. } => id,
+            Self::Array { id, .. } => id,
+        }
+    }
+}
+
 pub trait Typename {
     fn typename(&self) -> String;
 }

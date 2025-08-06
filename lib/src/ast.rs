@@ -221,6 +221,7 @@ impl Emit for Ast {
 }
 
 /// A set of ASTs indexed by module name
+#[derive(Debug)]
 pub struct AstModules {
     pub root: Ast,
     pub used: BTreeMap<String, AstModules>,
@@ -234,7 +235,7 @@ mod test {
 
     #[test]
     fn ast_roundtrip() {
-        let modules = match parse("examples/nic.rsf".into()) {
+        let modules = match parse("../examples/nic.rsf".into()) {
             Ok(ast) => ast,
             Err(ref e) => {
                 panic!("parsing failed: {e}");
@@ -247,6 +248,6 @@ mod test {
         // make sure we end with exactly one newline for comparison
         let code = code.trim().to_owned() + "\n";
 
-        assert_contents("examples/nic.rsf", &code);
+        assert_contents("../examples/nic.rsf", &code);
     }
 }

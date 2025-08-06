@@ -17,8 +17,10 @@ use winnow::{
         alpha1, alphanumeric1, digit1, hex_digit1, line_ending, multispace0,
         multispace1, newline, till_line_ending,
     },
-    combinator::{alt, cut_err, delimited, not, repeat, separated, trace},
-    error::{ContextError, ErrMode},
+    combinator::{
+        alt, cut_err, delimited, fail, not, repeat, separated, trace,
+    },
+    error::{ContextError, ErrMode, StrContext, StrContextValue},
 };
 
 pub type Input<'i> = LocatingSlice<&'i str>;
@@ -99,13 +101,20 @@ macro_rules! tr {
 
 pub fn parse_top(input: &mut Input) -> ModalResult<Vec<Top>> {
     let result = cut_err(repeat(
-        0..,
+        1..,
         alt((
             tr!(parse_use_top),
             tr!(parse_enum_top),
             tr!(parse_reg_top),
             tr!(parse_block_top),
             tr!(multi_disc_parser_top),
+            fail.context(StrContext::Label("top level element"))
+                .context(StrContext::Expected(StrContextValue::Description(
+                    "use statement",
+                )))
+                .context(StrContext::Expected(StrContextValue::Description(
+                    "register/block with a documentation comment",
+                ))),
         )),
     ))
     .parse_next(input)?;
@@ -182,22 +191,37 @@ pub fn parse_reg_cut(input: &mut Input) -> ModalResult<Register> {
     };
 
     token("{").parse_next(input)?;
-    let fields = separated(0.., parse_field, token(",")).parse_next(input)?;
-    // allow trailing comma
-    let _ = token(",").parse_next(input);
-    token("}").parse_next(input)?;
-    Ok(Register {
-        doc: Vec::default(),
-        id,
-        width,
-        reset_value,
-        sram: false,
-        fields,
-    })
+    let mut fields = Vec::default();
+    // TODO there is probably a better way to do this with repeat combinators?
+    // It's easy enough to do in a way that gobbles up errors and reports only
+    // the failure to parse the delimiter. But to get a good error we require
+    // that once "{" is seen everything that follows is either a valid field
+    // or a "}" and to report the error from the `parse_field` parser for
+    // anything that is not "}". I don't know how to do that with repeat
+    // combinators.
+    loop {
+        if token("}").parse_next(input).is_ok() {
+            return Ok(Register {
+                doc: Vec::default(),
+                id,
+                width,
+                sram: false,
+                fields,
+                reset_value,
+            });
+        }
+        fields.push(parse_field.parse_next(input)?);
+        // allow trailing comma
+        let _ = token(",").parse_next(input);
+    }
 }
 
 pub fn parse_field(input: &mut Input) -> ModalResult<Field> {
-    let doc = doc_comment_parser.parse_next(input)?;
+    let doc = doc_comment_parser
+        .context(StrContext::Expected(StrContextValue::Description(
+            "docstring for field",
+        )))
+        .parse_next(input)?;
     let id = identifier_parser.parse_next(input)?;
     token(":").parse_next(input)?;
     let mode = parse_field_mode.parse_next(input)?;
@@ -482,7 +506,7 @@ mod test {
 
     #[test]
     fn nic_example_parse() {
-        let text = std::fs::read_to_string("examples/nic.rsf").unwrap();
+        let text = std::fs::read_to_string("../examples/nic.rsf").unwrap();
         let s = Input::new(text.as_str());
         let ast = match parse_ast.parse(s) {
             Ok(ast) => ast,
@@ -497,7 +521,7 @@ mod test {
 
         assert_eq!(ast.enums.len(), 1);
         assert_eq!(ast.enums[0].id.name, "Lanes");
-        assert_eq!(ast.enums[0].width.value, 2);
+        assert_eq!(ast.enums[0].width.value, 3);
         assert_eq!(ast.enums[0].alternatives.len(), 5);
         assert_eq!(ast.enums[0].alternatives[0].id.name, "Single");
         assert_eq!(ast.enums[0].alternatives[1].id.name, "L2");
