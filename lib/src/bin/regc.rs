@@ -139,29 +139,39 @@ impl Visitor for RegInfoVisitor {
         _array_index: Option<u128>,
         addr: u128,
     ) {
+        let fullpath = if path.is_empty() {
+            id.name.clone()
+        } else {
+            format!(
+                "{}:{}",
+                path.iter()
+                    .map(|x| x.name.as_str())
+                    .collect::<Vec<_>>()
+                    .join(":"),
+                id.name,
+            )
+        };
         match &self.matcher {
             RegInfoMatch::Name(name) => {
                 let re = regex::Regex::new(name).expect("valid regex");
-                let fullpath = if path.is_empty() {
-                    id.name.clone()
-                } else {
-                    format!(
-                        "{}:{}",
-                        path.iter()
-                            .map(|x| x.name.as_str())
-                            .collect::<Vec<_>>()
-                            .join(":"),
-                        id.name,
-                    )
-                };
                 if re.is_match(fullpath.as_str()) {
-                    println!("{}", format!("0x{addr:x}").green());
+                    println!(
+                        "{}{} {}",
+                        format!("0x{addr:x}").green(),
+                        ":".dimmed(),
+                        fullpath
+                    );
                     println!("{reg}");
                 }
             }
             RegInfoMatch::Addr(a) => {
                 if *a == addr {
-                    println!("{}", format!("0x{addr:x}").green());
+                    println!(
+                        "{}{} {}",
+                        format!("0x{addr:x}").green(),
+                        ":".dimmed(),
+                        fullpath
+                    );
                     println!("{reg}");
                 }
             }
