@@ -246,7 +246,7 @@ impl Debug {
         self.0
     }
     pub fn reset(&mut self) {
-        self.0 = BitSet::<32>::from(4294967295u32);
+        bitset_macro::bitset!(32, 4294967295);
     }
 }
 impl From<u32> for Debug {

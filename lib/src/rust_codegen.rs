@@ -212,15 +212,8 @@ impl Visitor for CodegenVisitor {
         let reset = match &reg.reset_value {
             None => quote! { self.0 = BitSet::<#width>::ZERO },
             Some(v) => {
-                let val = match reg.width.value {
-                    8 => proc_macro2::Literal::u8_suffixed(v.value as u8),
-                    16 => proc_macro2::Literal::u16_suffixed(v.value as u16),
-                    32 => proc_macro2::Literal::u32_suffixed(v.value as u32),
-                    64 => proc_macro2::Literal::u64_suffixed(v.value as u64),
-                    128 => proc_macro2::Literal::u128_suffixed(v.value),
-                    _ => panic!("can't happen"),
-                };
-                quote! { self.0 = BitSet::<#width>::from(#val) }
+                let x = proc_macro2::Literal::u128_unsuffixed(v.value);
+                quote! { bitset_macro::bitset!(#width, #x); }
             }
         };
 
