@@ -210,7 +210,7 @@ pub fn parse_reg_cut(input: &mut Input) -> ModalResult<Register> {
                 reset_value,
             });
         }
-        fields.push(parse_field.parse_next(input)?);
+        fields.push(cut_err(parse_field).parse_next(input)?);
         // allow trailing comma
         let _ = token(",").parse_next(input);
     }
@@ -326,17 +326,28 @@ pub fn parse_block_cut(input: &mut Input) -> ModalResult<Block> {
     let id = identifier_parser.parse_next(input)?;
 
     token("{").parse_next(input)?;
-    let elements =
-        separated(0.., block_element_parser, token(",")).parse_next(input)?;
-    // allow trailing comma
-    let _ = token(",").parse_next(input);
-    token("}").parse_next(input)?;
-    Ok(Block {
-        doc: Vec::default(),
-        id,
-        sram: false,
-        elements,
-    })
+
+    let mut elements = Vec::default();
+    // TODO there is probably a better way to do this with repeat combinators?
+    // It's easy enough to do in a way that gobbles up errors and reports only
+    // the failure to parse the delimiter. But to get a good error we require
+    // that once "{" is seen everything that follows is either a valid element
+    // or a "}" and to report the error from the `block_element_parser` for
+    // anything that is not "}". I don't know how to do that with repeat
+    // combinators.
+    loop {
+        if token("}").parse_next(input).is_ok() {
+            return Ok(Block {
+                doc: Vec::default(),
+                id,
+                sram: false,
+                elements,
+            });
+        }
+        elements.push(cut_err(block_element_parser).parse_next(input)?);
+        // allow trailing comma
+        let _ = token(",").parse_next(input);
+    }
 }
 
 pub fn block_element_parser(input: &mut Input) -> ModalResult<BlockElement> {
