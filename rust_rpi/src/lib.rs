@@ -1,6 +1,29 @@
 //! Rust register programming interface (RPI)
+#![no_std]
 
-pub use crate::error::OutOfRange;
+use core::fmt::Display;
+
+#[derive(Debug)]
+pub enum OutOfRange {
+    /// Conversion from integer type to an enumeration from a value that is
+    /// too large for the enum.
+    EnumValueOutOfRange,
+
+    /// The supplied index for a block component array is larger than the
+    /// length of the array.
+    IndexOutOfRange,
+}
+
+impl Display for OutOfRange {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::EnumValueOutOfRange => write!(f, "enum value out of range"),
+            Self::IndexOutOfRange => write!(f, "index value out of range"),
+        }
+    }
+}
+
+impl core::error::Error for OutOfRange {}
 
 /// The `Platform` trait encapsulates the mechanics of how to read and write
 /// registers. For example, this trait might be implemented using an ioctl
@@ -91,13 +114,13 @@ pub trait RegisterInstance<T, AddrType, ValueType> {
     ) -> Result<(), P::Error>;
 }
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug)]
 pub enum DummyPlatformError {}
 
 /// A dummy platform used only for testing.
 #[derive(Default)]
 pub struct DummyPlatform<AddrType> {
-    phantom_data: std::marker::PhantomData<AddrType>,
+    phantom_data: core::marker::PhantomData<AddrType>,
 }
 
 impl<AddrType, ValueType> Platform<AddrType, ValueType>

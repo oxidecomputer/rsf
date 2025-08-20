@@ -8,7 +8,7 @@ use rsf::rust_codegen::{AddrType, ValueType};
 #[test]
 fn test_codegen() {
     let output = match rsf::rust_codegen::codegen(
-        "examples/nic.rsf".into(),
+        "../examples/nic.rsf".into(),
         AddrType::U32,
         ValueType::U32,
     ) {
@@ -18,6 +18,15 @@ fn test_codegen() {
         }
     };
     assert_contents("test_data/nic_rpi.rs", &output);
+
+    assert!(
+        !output.contains("unwrap"),
+        "generated code may not contain unwraps"
+    );
+    assert!(
+        !output.contains("expect"),
+        "generated code may not contain expects"
+    );
 }
 
 // Kersplat generated code right here!
@@ -32,7 +41,7 @@ mod generated {
 #[test]
 fn run_generated_code() -> anyhow::Result<()> {
     use generated::*;
-    use rsf::rust_rpi::{DummyPlatform, RegisterInstance};
+    use rust_rpi::{DummyPlatform, RegisterInstance};
 
     // Initialize the underlying platform. For testing this is just a
     // dummy platform.
@@ -51,7 +60,7 @@ fn run_generated_code() -> anyhow::Result<()> {
 
     // Read some config, status
     let config = rpi.phys(1)?.config().read(&platform).unwrap();
-    assert_eq!(config.get_speed(), ethernet::DataRate::G50);
+    assert_eq!(config.get_speed().unwrap(), ethernet::DataRate::G50);
 
     let status = rpi.phys(2)?.status().read(&platform).unwrap();
     assert!(!status.get_carrier());
