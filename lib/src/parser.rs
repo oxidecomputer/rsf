@@ -57,7 +57,24 @@ pub fn parse_rec(
     }
     let text = std::fs::read_to_string(filepath)?;
     let input = Input::new(text.as_str());
-    let ast = parse_ast.parse(input).map_err(|e| anyhow!("{e}"))?;
+    let ast = parse_ast.parse(input).map_err(|e| {
+        let cause = e
+            .inner()
+            .context()
+            .map(|x| x.to_string())
+            .collect::<Vec<_>>()
+            .join(", ");
+        let msg = annotate_snippets::Level::Error.title(&cause).snippet(
+            annotate_snippets::Snippet::source(&input)
+                .fold(true)
+                .annotation(
+                    annotate_snippets::Level::Error.span(e.char_span().clone()),
+                ),
+        );
+        let renderer = annotate_snippets::Renderer::styled();
+        let rendered = renderer.render(msg);
+        anyhow!("{rendered}")
+    })?;
     let modules_path = filepath.parent().ok_or_else(|| {
         anyhow!("failed to determine modules path from {filepath}")
     })?;
@@ -365,22 +382,28 @@ pub fn component_parser(input: &mut Input) -> ModalResult<Component> {
     let id = identifier_parser.parse_next(input)?;
     token(":").parse_next(input)?;
     let typ = parse_qualified_type.parse_next(input)?;
-    Ok(match component_array_parser.parse_next(input) {
-        Ok((length, spacing)) => Component::Array {
+    if token("[").parse_next(input).is_ok() {
+        let (length, spacing) = component_array_parser.parse_next(input)?;
+        Ok(Component::Array {
             id,
             typ,
             length,
             spacing,
-        },
-        Err(_) => Component::Single { id, typ },
-    })
+        })
+    } else {
+        Ok(Component::Single { id, typ })
+    }
 }
 
 pub fn component_array_parser(
     input: &mut Input,
 ) -> ModalResult<(Number, Number)> {
-    token("[").parse_next(input)?;
-    let length = number_parser.parse_next(input)?;
+    let length = number_parser
+        .context(StrContext::Label("array size"))
+        .context(StrContext::Expected(StrContextValue::Description(
+            "positive integer",
+        )))
+        .parse_next(input)?;
     token(";").parse_next(input)?;
     let spacing = number_parser.parse_next(input)?;
     token("]").parse_next(input)?;
