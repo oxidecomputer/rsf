@@ -154,7 +154,12 @@ pub fn parse_enum_top(input: &mut Input) -> ModalResult<Top> {
 }
 
 pub fn parse_enum(input: &mut Input) -> ModalResult<Enum> {
-    let doc = doc_comment_parser.parse_next(input)?;
+    let doc = doc_comment_parser
+        .context(StrContext::Label("enum"))
+        .context(StrContext::Expected(StrContextValue::Description(
+            "doc comment",
+        )))
+        .parse_next(input)?;
     token("enum").parse_next(input)?;
     let mut e = cut_err(parse_enum_cut).parse_next(input)?;
     e.doc = doc;
@@ -178,7 +183,12 @@ pub fn parse_enum_cut(input: &mut Input) -> ModalResult<Enum> {
 }
 
 pub fn parse_enum_alt(input: &mut Input) -> ModalResult<Alternative> {
-    let doc = doc_comment_parser.parse_next(input)?;
+    let doc = doc_comment_parser
+        .context(StrContext::Label("enum alternate"))
+        .context(StrContext::Expected(StrContextValue::Description(
+            "doc comment",
+        )))
+        .parse_next(input)?;
     let id = identifier_parser.parse_next(input)?;
     token("=").parse_next(input)?;
     let value = number_parser.parse_next(input)?;
@@ -190,7 +200,12 @@ pub fn parse_reg_top(input: &mut Input) -> ModalResult<Top> {
 }
 
 pub fn parse_reg(input: &mut Input) -> ModalResult<Register> {
-    let doc = doc_comment_parser.parse_next(input)?;
+    let doc = doc_comment_parser
+        .context(StrContext::Label("register"))
+        .context(StrContext::Expected(StrContextValue::Description(
+            "doc comment",
+        )))
+        .parse_next(input)?;
     let sram = token("sram").parse_next(input).is_ok();
     token("register").parse_next(input)?;
     let mut reg = cut_err(parse_reg_cut).parse_next(input)?;
@@ -235,8 +250,9 @@ pub fn parse_reg_cut(input: &mut Input) -> ModalResult<Register> {
 
 pub fn parse_field(input: &mut Input) -> ModalResult<Field> {
     let doc = doc_comment_parser
+        .context(StrContext::Label("field"))
         .context(StrContext::Expected(StrContextValue::Description(
-            "docstring for field",
+            "doc comment",
         )))
         .parse_next(input)?;
     let id = identifier_parser.parse_next(input)?;
@@ -330,7 +346,12 @@ pub fn parse_block_top(input: &mut Input) -> ModalResult<Top> {
 }
 
 pub fn parse_block(input: &mut Input) -> ModalResult<Block> {
-    let doc = doc_comment_parser.parse_next(input)?;
+    let doc = doc_comment_parser
+        .context(StrContext::Label("block"))
+        .context(StrContext::Expected(StrContextValue::Description(
+            "doc comment",
+        )))
+        .parse_next(input)?;
     let sram = token("sram").parse_next(input).is_ok();
     token("block").parse_next(input)?;
     let mut blk = cut_err(parse_block_cut).parse_next(input)?;
@@ -368,7 +389,12 @@ pub fn parse_block_cut(input: &mut Input) -> ModalResult<Block> {
 }
 
 pub fn block_element_parser(input: &mut Input) -> ModalResult<BlockElement> {
-    let doc = doc_comment_parser.parse_next(input)?;
+    let doc = doc_comment_parser
+        .context(StrContext::Label("block element"))
+        .context(StrContext::Expected(StrContextValue::Description(
+            "doc comment",
+        )))
+        .parse_next(input)?;
     let component = component_parser.parse_next(input)?;
     let offset = component_offset_parser.parse_next(input)?;
     Ok(BlockElement {
