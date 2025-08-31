@@ -111,8 +111,8 @@ impl Visitor for RegMapVisitor {
                 path.iter()
                     .map(|x| x.name.blue().to_string())
                     .collect::<Vec<_>>()
-                    .join(":".dimmed().to_string().as_str()),
-                ":".dimmed(),
+                    .join(".".dimmed().to_string().as_str()),
+                ".".dimmed(),
                 id.name.cyan(),
             )
         };
@@ -143,11 +143,11 @@ impl Visitor for RegInfoVisitor {
             id.name.clone()
         } else {
             format!(
-                "{}:{}",
+                "{}.{}",
                 path.iter()
                     .map(|x| x.name.as_str())
                     .collect::<Vec<_>>()
-                    .join(":"),
+                    .join("."),
                 id.name,
             )
         };

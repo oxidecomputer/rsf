@@ -84,12 +84,14 @@ impl Visitor for CodegenVisitor {
         }
         let name = format_ident!("{}", reg.id.name.to_case(Case::Pascal));
         let width = proc_macro2::Literal::u128_unsuffixed(reg.width.value);
+        let mut display_impl = TokenStream::default();
         let mut fields = TokenStream::default();
         for f in &reg.fields {
             let doc = f.doc.join("\n");
 
             let getter = format_ident!("get_{}", f.id.name);
             let setter = format_ident!("set_{}", f.id.name);
+            let fname_str = &f.id.name;
 
             let offset = proc_macro2::Literal::u128_unsuffixed(f.offset.value);
 
@@ -104,6 +106,9 @@ impl Visitor for CodegenVisitor {
                             pub fn #getter(&self) -> bool {
                                 bool::from(self.0.get_field::<#width, #offset>())
                             }
+                        });
+                        display_impl.extend(quote! {
+                            writeln!(f, "{}: {}", #fname_str, self.#getter())?;
                         });
                     }
                     if f.mode == FieldMode::WriteOnly
@@ -131,6 +136,16 @@ impl Visitor for CodegenVisitor {
                             pub fn #getter(&self) -> BitSet<#width> {
                                 self.0.get_field::<#width, #offset>()
                             }
+                        });
+                        display_impl.extend(quote! {
+                            writeln!(
+                                f,
+                                "{}: {}/0x{:x}/0b{:b}",
+                                #fname_str,
+                                self.#getter().to_int(),
+                                self.#getter().to_int(),
+                                self.#getter().to_int(),
+                            )?;
                         });
                     }
                     if f.mode == FieldMode::WriteOnly
@@ -178,6 +193,9 @@ impl Visitor for CodegenVisitor {
                             pub fn #getter(&self) -> Result<#typename, rust_rpi::OutOfRange> {
                                 self.0.get_field::<#width, #offset>().try_into()
                             }
+                        });
+                        display_impl.extend(quote! {
+                            writeln!(f, "{}: {:?}", #fname_str, self.#getter())?;
                         });
                     }
                     if f.mode == FieldMode::WriteOnly
@@ -334,6 +352,12 @@ impl Visitor for CodegenVisitor {
             quote! {}
         };
 
+        let format_param = if display_impl.is_empty() {
+            format_ident!("_f")
+        } else {
+            format_ident!("f")
+        };
+
         self.register_definitions.extend(quote! {
 
             #[derive(Default, Debug)]
@@ -358,6 +382,13 @@ impl Visitor for CodegenVisitor {
             }
 
             #rpi_impl
+
+            impl core::fmt::Display for #name {
+                fn fmt(&self, #format_param: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+                    #display_impl
+                    Ok(())
+                }
+            }
         })
     }
 
