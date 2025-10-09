@@ -22,6 +22,7 @@ thiserror.workspace = true
 petgraph.workspace = true
 clap.workspace = true
 regex.workspace = true
+annotate-snippets.workspace = true
 
 [dev-dependencies]
 rust_rpi = { path = "../rust_rpi" }

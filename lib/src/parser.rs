@@ -57,7 +57,24 @@ pub fn parse_rec(
     }
     let text = std::fs::read_to_string(filepath)?;
     let input = Input::new(text.as_str());
-    let ast = parse_ast.parse(input).map_err(|e| anyhow!("{e}"))?;
+    let ast = parse_ast.parse(input).map_err(|e| {
+        let cause = e
+            .inner()
+            .context()
+            .map(|x| x.to_string())
+            .collect::<Vec<_>>()
+            .join(", ");
+        let msg = annotate_snippets::Level::Error.title(&cause).snippet(
+            annotate_snippets::Snippet::source(&input)
+                .fold(true)
+                .annotation(
+                    annotate_snippets::Level::Error.span(e.char_span().clone()),
+                ),
+        );
+        let renderer = annotate_snippets::Renderer::styled();
+        let rendered = renderer.render(msg);
+        anyhow!("{rendered}")
+    })?;
     let modules_path = filepath.parent().ok_or_else(|| {
         anyhow!("failed to determine modules path from {filepath}")
     })?;
@@ -137,7 +154,12 @@ pub fn parse_enum_top(input: &mut Input) -> ModalResult<Top> {
 }
 
 pub fn parse_enum(input: &mut Input) -> ModalResult<Enum> {
-    let doc = doc_comment_parser.parse_next(input)?;
+    let doc = doc_comment_parser
+        .context(StrContext::Label("enum"))
+        .context(StrContext::Expected(StrContextValue::Description(
+            "doc comment",
+        )))
+        .parse_next(input)?;
     token("enum").parse_next(input)?;
     let mut e = cut_err(parse_enum_cut).parse_next(input)?;
     e.doc = doc;
@@ -161,7 +183,12 @@ pub fn parse_enum_cut(input: &mut Input) -> ModalResult<Enum> {
 }
 
 pub fn parse_enum_alt(input: &mut Input) -> ModalResult<Alternative> {
-    let doc = doc_comment_parser.parse_next(input)?;
+    let doc = doc_comment_parser
+        .context(StrContext::Label("enum alternate"))
+        .context(StrContext::Expected(StrContextValue::Description(
+            "doc comment",
+        )))
+        .parse_next(input)?;
     let id = identifier_parser.parse_next(input)?;
     token("=").parse_next(input)?;
     let value = number_parser.parse_next(input)?;
@@ -173,7 +200,12 @@ pub fn parse_reg_top(input: &mut Input) -> ModalResult<Top> {
 }
 
 pub fn parse_reg(input: &mut Input) -> ModalResult<Register> {
-    let doc = doc_comment_parser.parse_next(input)?;
+    let doc = doc_comment_parser
+        .context(StrContext::Label("register"))
+        .context(StrContext::Expected(StrContextValue::Description(
+            "doc comment",
+        )))
+        .parse_next(input)?;
     let sram = token("sram").parse_next(input).is_ok();
     token("register").parse_next(input)?;
     let mut reg = cut_err(parse_reg_cut).parse_next(input)?;
@@ -210,7 +242,7 @@ pub fn parse_reg_cut(input: &mut Input) -> ModalResult<Register> {
                 reset_value,
             });
         }
-        fields.push(parse_field.parse_next(input)?);
+        fields.push(cut_err(parse_field).parse_next(input)?);
         // allow trailing comma
         let _ = token(",").parse_next(input);
     }
@@ -218,8 +250,9 @@ pub fn parse_reg_cut(input: &mut Input) -> ModalResult<Register> {
 
 pub fn parse_field(input: &mut Input) -> ModalResult<Field> {
     let doc = doc_comment_parser
+        .context(StrContext::Label("field"))
         .context(StrContext::Expected(StrContextValue::Description(
-            "docstring for field",
+            "doc comment",
         )))
         .parse_next(input)?;
     let id = identifier_parser.parse_next(input)?;
@@ -313,7 +346,12 @@ pub fn parse_block_top(input: &mut Input) -> ModalResult<Top> {
 }
 
 pub fn parse_block(input: &mut Input) -> ModalResult<Block> {
-    let doc = doc_comment_parser.parse_next(input)?;
+    let doc = doc_comment_parser
+        .context(StrContext::Label("block"))
+        .context(StrContext::Expected(StrContextValue::Description(
+            "doc comment",
+        )))
+        .parse_next(input)?;
     let sram = token("sram").parse_next(input).is_ok();
     token("block").parse_next(input)?;
     let mut blk = cut_err(parse_block_cut).parse_next(input)?;
@@ -326,21 +364,37 @@ pub fn parse_block_cut(input: &mut Input) -> ModalResult<Block> {
     let id = identifier_parser.parse_next(input)?;
 
     token("{").parse_next(input)?;
-    let elements =
-        separated(0.., block_element_parser, token(",")).parse_next(input)?;
-    // allow trailing comma
-    let _ = token(",").parse_next(input);
-    token("}").parse_next(input)?;
-    Ok(Block {
-        doc: Vec::default(),
-        id,
-        sram: false,
-        elements,
-    })
+
+    let mut elements = Vec::default();
+    // TODO there is probably a better way to do this with repeat combinators?
+    // It's easy enough to do in a way that gobbles up errors and reports only
+    // the failure to parse the delimiter. But to get a good error we require
+    // that once "{" is seen everything that follows is either a valid element
+    // or a "}" and to report the error from the `block_element_parser` for
+    // anything that is not "}". I don't know how to do that with repeat
+    // combinators.
+    loop {
+        if token("}").parse_next(input).is_ok() {
+            return Ok(Block {
+                doc: Vec::default(),
+                id,
+                sram: false,
+                elements,
+            });
+        }
+        elements.push(cut_err(block_element_parser).parse_next(input)?);
+        // allow trailing comma
+        let _ = token(",").parse_next(input);
+    }
 }
 
 pub fn block_element_parser(input: &mut Input) -> ModalResult<BlockElement> {
-    let doc = doc_comment_parser.parse_next(input)?;
+    let doc = doc_comment_parser
+        .context(StrContext::Label("block element"))
+        .context(StrContext::Expected(StrContextValue::Description(
+            "doc comment",
+        )))
+        .parse_next(input)?;
     let component = component_parser.parse_next(input)?;
     let offset = component_offset_parser.parse_next(input)?;
     Ok(BlockElement {
@@ -354,22 +408,28 @@ pub fn component_parser(input: &mut Input) -> ModalResult<Component> {
     let id = identifier_parser.parse_next(input)?;
     token(":").parse_next(input)?;
     let typ = parse_qualified_type.parse_next(input)?;
-    Ok(match component_array_parser.parse_next(input) {
-        Ok((length, spacing)) => Component::Array {
+    if token("[").parse_next(input).is_ok() {
+        let (length, spacing) = component_array_parser.parse_next(input)?;
+        Ok(Component::Array {
             id,
             typ,
             length,
             spacing,
-        },
-        Err(_) => Component::Single { id, typ },
-    })
+        })
+    } else {
+        Ok(Component::Single { id, typ })
+    }
 }
 
 pub fn component_array_parser(
     input: &mut Input,
 ) -> ModalResult<(Number, Number)> {
-    token("[").parse_next(input)?;
-    let length = number_parser.parse_next(input)?;
+    let length = number_parser
+        .context(StrContext::Label("array size"))
+        .context(StrContext::Expected(StrContextValue::Description(
+            "positive integer",
+        )))
+        .parse_next(input)?;
     token(";").parse_next(input)?;
     let spacing = number_parser.parse_next(input)?;
     token("]").parse_next(input)?;

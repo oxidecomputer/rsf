@@ -123,6 +123,16 @@ impl rust_rpi::RegisterInstance<PhyConfig, u32, u32> for PhyConfigInstance {
         self.write(platform, value)
     }
 }
+impl core::fmt::Display for PhyConfig {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        writeln!(f, "{}: {:?}", "speed", self.get_speed())?;
+        writeln!(f, "{}: {:?}", "reach", self.get_reach())?;
+        writeln!(f, "{}: {:?}", "lanes", self.get_lanes())?;
+        writeln!(f, "{}: {:?}", "fec", self.get_fec())?;
+        writeln!(f, "{}: {:?}", "modulation", self.get_modulation())?;
+        Ok(())
+    }
+}
 #[derive(Default, Debug)]
 /// Status of an Ethernet physical interface (phy).
 pub struct PhyStatus(BitSet<32>);
@@ -214,6 +224,14 @@ impl rust_rpi::RegisterInstance<PhyStatus, u32, u32> for PhyStatusInstance {
         value.reset();
         f(&mut value);
         self.write(platform, value)
+    }
+}
+impl core::fmt::Display for PhyStatus {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        writeln!(f, "{}: {}", "carrier", self.get_carrier())?;
+        writeln!(f, "{}: {}", "signal_error", self.get_signal_error())?;
+        writeln!(f, "{}: {}", "data_valid", self.get_data_valid())?;
+        Ok(())
     }
 }
 #[derive(Debug, Default)]
@@ -317,6 +335,15 @@ impl rust_rpi::RegisterInstance<Debug, u32, u32> for DebugInstance {
         value.reset();
         f(&mut value);
         self.write(platform, value)
+    }
+}
+impl core::fmt::Display for Debug {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        writeln!(
+            f, "{}: {}/0x{:x}/0b{:b}", "value", self.get_value().to_int(), self
+            .get_value().to_int(), self.get_value().to_int(),
+        )?;
+        Ok(())
     }
 }
 /// Number of lanes per phy.
@@ -659,6 +686,15 @@ pub mod version {
             value.reset();
             f(&mut value);
             self.write(platform, value)
+        }
+    }
+    impl core::fmt::Display for Version {
+        fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+            writeln!(
+                f, "{}: {}/0x{:x}/0b{:b}", "value", self.get_value().to_int(), self
+                .get_value().to_int(), self.get_value().to_int(),
+            )?;
+            Ok(())
         }
     }
     /// Component version info
