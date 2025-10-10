@@ -13,6 +13,8 @@ block Main {
 }
 
 /// Phy registers.
+#[attr(foo = "this is an attribute")]
+#[attr(bar = "embedded quota\" attr")]
 block Phy {
     /// Configuration register.
     config: PhyConfig @ 0x200,

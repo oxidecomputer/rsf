@@ -77,6 +77,9 @@ impl Emit for Register {
         for x in &self.doc {
             writeln!(f, "///{x}")?;
         }
+        for x in &self.attrs {
+            writeln!(f, "{x}")?;
+        }
         writeln!(
             f,
             "{}register<{}> {}{} {{",
@@ -103,6 +106,9 @@ impl Emit for Field {
     fn emit(&self, f: &mut impl Write) -> std::fmt::Result {
         for x in &self.doc {
             writeln!(f, "    ///{x}")?;
+        }
+        for x in &self.attrs {
+            writeln!(f, "    {x}")?;
         }
         write!(
             f,
@@ -142,6 +148,9 @@ impl Emit for Block {
         for x in &self.doc {
             writeln!(f, "///{x}")?;
         }
+        for x in &self.attrs {
+            writeln!(f, "{x}")?;
+        }
         writeln!(
             f,
             "{}block {} {{",
@@ -163,6 +172,9 @@ impl Emit for BlockElement {
     fn emit(&self, f: &mut impl Write) -> std::fmt::Result {
         for x in &self.doc {
             writeln!(f, "    ///{x}")?;
+        }
+        for x in &self.attrs {
+            writeln!(f, "    {x}")?;
         }
         self.component.emit(f)?;
         write!(f, " @ {},", self.offset.to_code())?;

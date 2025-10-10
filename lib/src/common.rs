@@ -4,11 +4,29 @@ use std::{fmt::Display, ops::Range};
 use crate::ast::Emit;
 
 #[derive(Debug, Clone, PartialEq)]
+pub struct Attribute {
+    pub id: Identifier,
+    pub value: String,
+}
+
+impl Display for Attribute {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "#[attr({name} = \"{value}\")]",
+            name = self.id.name,
+            value = self.value,
+        )
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub struct Enum {
     pub doc: Vec<String>,
     pub id: Identifier,
     pub width: Number,
     pub alternatives: Vec<Alternative>,
+    pub attrs: Vec<Attribute>,
 }
 
 impl Emit for Enum {
@@ -16,7 +34,15 @@ impl Emit for Enum {
         for x in &self.doc {
             writeln!(f, "///{x}")?;
         }
-        writeln!(f, "enum<{}> {} {{", self.width.to_code(), self.id.name)?;
+        for x in &self.attrs {
+            writeln!(f, "{x}")?;
+        }
+        writeln!(
+            f,
+            "enum<{width}> {name} {{",
+            width = self.width.to_code(),
+            name = self.id.name
+        )?;
         for x in &self.alternatives {
             x.emit(f)?;
         }
@@ -90,6 +116,7 @@ pub struct Field<T> {
     pub mode: FieldMode,
     pub typ: T,
     pub offset: Number,
+    pub attrs: Vec<Attribute>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -100,6 +127,7 @@ pub struct Register<T> {
     pub reset_value: Option<Number>,
     pub sram: bool,
     pub fields: Vec<Field<T>>,
+    pub attrs: Vec<Attribute>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -108,6 +136,7 @@ pub struct Block<T> {
     pub id: Identifier,
     pub sram: bool,
     pub elements: Vec<BlockElement<T>>,
+    pub attrs: Vec<Attribute>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -115,6 +144,7 @@ pub struct BlockElement<T> {
     pub doc: Vec<String>,
     pub component: Component<T>,
     pub offset: Number,
+    pub attrs: Vec<Attribute>,
 }
 
 #[derive(Debug, PartialEq, Clone)]
