@@ -7,7 +7,7 @@ use crate::{
         Ast, AstModules, Block, BlockElement, Component, Enum, Field,
         FieldType, Identifier, Number, QualifiedType, Register, Use,
     },
-    common::{Alternative, FieldMode, NumberFormat},
+    common::{Alternative, Attribute, FieldMode, NumberFormat},
 };
 use anyhow::{Result, anyhow};
 use camino::{Utf8Path, Utf8PathBuf};
@@ -21,6 +21,7 @@ use winnow::{
         alt, cut_err, delimited, fail, not, repeat, separated, trace,
     },
     error::{ContextError, ErrMode, StrContext, StrContextValue},
+    token::take_till,
 };
 
 pub type Input<'i> = LocatingSlice<&'i str>;
@@ -116,6 +117,14 @@ macro_rules! tr {
     };
 }
 
+macro_rules! contextual {
+    ($name:ident, $label:literal, [$($descr:literal),+]) => {
+        $name
+            .context(StrContext::Label($label))
+            $(.context(StrContext::Expected(StrContextValue::Description($descr))))+
+    }
+}
+
 pub fn parse_top(input: &mut Input) -> ModalResult<Vec<Top>> {
     let result = cut_err(repeat(
         1..,
@@ -125,13 +134,14 @@ pub fn parse_top(input: &mut Input) -> ModalResult<Vec<Top>> {
             tr!(parse_reg_top),
             tr!(parse_block_top),
             tr!(multi_disc_parser_top),
-            fail.context(StrContext::Label("top level element"))
-                .context(StrContext::Expected(StrContextValue::Description(
+            contextual!(
+                fail,
+                "top level element",
+                [
                     "use statement",
-                )))
-                .context(StrContext::Expected(StrContextValue::Description(
-                    "register/block with a documentation comment",
-                ))),
+                    "register/block with a documentation comment"
+                ]
+            ),
         )),
     ))
     .parse_next(input)?;
@@ -149,23 +159,47 @@ pub fn parse_use(input: &mut Input) -> ModalResult<Use> {
     Ok(Use { module })
 }
 
+pub fn attributes_parser(input: &mut Input) -> ModalResult<Vec<Attribute>> {
+    let attrs: Vec<Attribute> = separated(1.., attribute_line_parser, newline)
+        .parse_next(input)
+        .unwrap_or_else(|_| vec![]);
+    Ok(attrs)
+}
+
+pub fn attribute_line_parser(input: &mut Input) -> ModalResult<Attribute> {
+    let _ = multispace0.parse_next(input)?;
+    let attr = delimited("#[attr(", parse_attribute, ")]").parse_next(input)?;
+    Ok(attr)
+}
+
+pub fn parse_attribute(input: &mut Input) -> ModalResult<Attribute> {
+    let _ = multispace0.parse_next(input)?;
+    let id = identifier_parser.parse_next(input)?;
+    let _ = multispace0.parse_next(input)?;
+    token("=").parse_next(input)?;
+    let _ = multispace0.parse_next(input)?;
+    let value = string_parser.parse_next(input)?;
+    let _ = multispace0.parse_next(input)?;
+    Ok(Attribute { id, value })
+}
+
 pub fn parse_enum_top(input: &mut Input) -> ModalResult<Top> {
     Ok(Top::Enum(parse_enum.parse_next(input)?))
 }
 
 pub fn parse_enum(input: &mut Input) -> ModalResult<Enum> {
-    let doc = doc_comment_parser
-        .context(StrContext::Label("enum"))
-        .context(StrContext::Expected(StrContextValue::Description(
-            "doc comment",
-        )))
+    let doc = contextual!(doc_comment_parser, "enum", ["doc comment"])
+        .parse_next(input)?;
+    let attrs = contextual!(attributes_parser, "enum", ["attributes"])
         .parse_next(input)?;
     token("enum").parse_next(input)?;
     let mut e = cut_err(parse_enum_cut).parse_next(input)?;
     e.doc = doc;
+    e.attrs = attrs;
     Ok(e)
 }
 pub fn parse_enum_cut(input: &mut Input) -> ModalResult<Enum> {
+    let attrs = vec![];
     let width = delimited("<", number_parser, ">").parse_next(input)?;
     let id = identifier_parser.parse_next(input)?;
     token("{").parse_next(input)?;
@@ -179,16 +213,14 @@ pub fn parse_enum_cut(input: &mut Input) -> ModalResult<Enum> {
         id,
         width,
         alternatives,
+        attrs,
     })
 }
 
 pub fn parse_enum_alt(input: &mut Input) -> ModalResult<Alternative> {
-    let doc = doc_comment_parser
-        .context(StrContext::Label("enum alternate"))
-        .context(StrContext::Expected(StrContextValue::Description(
-            "doc comment",
-        )))
-        .parse_next(input)?;
+    let doc =
+        contextual!(doc_comment_parser, "enum alternative", ["doc comment"])
+            .parse_next(input)?;
     let id = identifier_parser.parse_next(input)?;
     token("=").parse_next(input)?;
     let value = number_parser.parse_next(input)?;
@@ -200,21 +232,21 @@ pub fn parse_reg_top(input: &mut Input) -> ModalResult<Top> {
 }
 
 pub fn parse_reg(input: &mut Input) -> ModalResult<Register> {
-    let doc = doc_comment_parser
-        .context(StrContext::Label("register"))
-        .context(StrContext::Expected(StrContextValue::Description(
-            "doc comment",
-        )))
+    let doc = contextual!(doc_comment_parser, "register", ["doc comment"])
+        .parse_next(input)?;
+    let attrs = contextual!(attributes_parser, "register", ["attributes"])
         .parse_next(input)?;
     let sram = token("sram").parse_next(input).is_ok();
     token("register").parse_next(input)?;
     let mut reg = cut_err(parse_reg_cut).parse_next(input)?;
     reg.doc = doc;
     reg.sram = sram;
+    reg.attrs = attrs;
     Ok(reg)
 }
 
 pub fn parse_reg_cut(input: &mut Input) -> ModalResult<Register> {
+    let attrs = vec![];
     let width = delimited("<", number_parser, ">").parse_next(input)?;
     let id = identifier_parser.parse_next(input)?;
     let reset_value = match token("reset").parse_next(input) {
@@ -240,6 +272,7 @@ pub fn parse_reg_cut(input: &mut Input) -> ModalResult<Register> {
                 sram: false,
                 fields,
                 reset_value,
+                attrs,
             });
         }
         fields.push(cut_err(parse_field).parse_next(input)?);
@@ -249,11 +282,9 @@ pub fn parse_reg_cut(input: &mut Input) -> ModalResult<Register> {
 }
 
 pub fn parse_field(input: &mut Input) -> ModalResult<Field> {
-    let doc = doc_comment_parser
-        .context(StrContext::Label("field"))
-        .context(StrContext::Expected(StrContextValue::Description(
-            "doc comment",
-        )))
+    let doc = contextual!(doc_comment_parser, "field", ["doc comment"])
+        .parse_next(input)?;
+    let attrs = contextual!(attributes_parser, "field", ["attributes"])
         .parse_next(input)?;
     let id = identifier_parser.parse_next(input)?;
     token(":").parse_next(input)?;
@@ -266,6 +297,7 @@ pub fn parse_field(input: &mut Input) -> ModalResult<Field> {
         mode,
         typ,
         offset,
+        attrs,
     })
 }
 
@@ -346,17 +378,16 @@ pub fn parse_block_top(input: &mut Input) -> ModalResult<Top> {
 }
 
 pub fn parse_block(input: &mut Input) -> ModalResult<Block> {
-    let doc = doc_comment_parser
-        .context(StrContext::Label("block"))
-        .context(StrContext::Expected(StrContextValue::Description(
-            "doc comment",
-        )))
+    let doc = contextual!(doc_comment_parser, "block", ["doc comment"])
+        .parse_next(input)?;
+    let attrs = contextual!(attributes_parser, "block", ["attributes"])
         .parse_next(input)?;
     let sram = token("sram").parse_next(input).is_ok();
     token("block").parse_next(input)?;
     let mut blk = cut_err(parse_block_cut).parse_next(input)?;
     blk.doc = doc;
     blk.sram = sram;
+    blk.attrs = attrs;
     Ok(blk)
 }
 
@@ -380,6 +411,7 @@ pub fn parse_block_cut(input: &mut Input) -> ModalResult<Block> {
                 id,
                 sram: false,
                 elements,
+                attrs: Vec::default(),
             });
         }
         elements.push(cut_err(block_element_parser).parse_next(input)?);
@@ -389,11 +421,9 @@ pub fn parse_block_cut(input: &mut Input) -> ModalResult<Block> {
 }
 
 pub fn block_element_parser(input: &mut Input) -> ModalResult<BlockElement> {
-    let doc = doc_comment_parser
-        .context(StrContext::Label("block element"))
-        .context(StrContext::Expected(StrContextValue::Description(
-            "doc comment",
-        )))
+    let doc = contextual!(doc_comment_parser, "block element", ["doc comment"])
+        .parse_next(input)?;
+    let attrs = contextual!(attributes_parser, "block element", ["attributes"])
         .parse_next(input)?;
     let component = component_parser.parse_next(input)?;
     let offset = component_offset_parser.parse_next(input)?;
@@ -401,6 +431,7 @@ pub fn block_element_parser(input: &mut Input) -> ModalResult<BlockElement> {
         doc,
         component,
         offset,
+        attrs,
     })
 }
 
@@ -424,11 +455,7 @@ pub fn component_parser(input: &mut Input) -> ModalResult<Component> {
 pub fn component_array_parser(
     input: &mut Input,
 ) -> ModalResult<(Number, Number)> {
-    let length = number_parser
-        .context(StrContext::Label("array size"))
-        .context(StrContext::Expected(StrContextValue::Description(
-            "positive integer",
-        )))
+    let length = contextual!(number_parser, "array size", ["positive integer"])
         .parse_next(input)?;
     token(";").parse_next(input)?;
     let spacing = number_parser.parse_next(input)?;
@@ -511,6 +538,29 @@ pub fn line_comments_parser(input: &mut Input) -> ModalResult<Vec<Top>> {
     repeat(0.., token(line_comment_parser)).parse_next(input)
 }
 
+/// Parse a delimited string, with embedded escapes.
+pub fn string_parser<'s>(input: &mut Input<'s>) -> ModalResult<String> {
+    trace("string_parser", move |input: &mut Input<'s>| {
+        delimited("\"", parse_string, "\"").parse_next(input)
+    })
+    .parse_next(input)
+}
+
+fn parse_string<'s>(input: &mut Input<'s>) -> ModalResult<String> {
+    trace("parse_string", move |input: &mut Input<'s>| {
+        let s: String = repeat(0.., parse_string_parts).parse_next(input)?;
+        Ok(s)
+    })
+    .parse_next(input)
+}
+
+fn parse_string_parts<'s>(input: &mut Input<'s>) -> ModalResult<&'s str> {
+    trace("parse_string_parts", move |input: &mut Input<'s>| {
+        alt(("\\\"", take_till(1, |c| c == '"'))).parse_next(input)
+    })
+    .parse_next(input)
+}
+
 /// Parse an identifier.
 pub fn identifier_parser<'s>(input: &mut Input<'s>) -> ModalResult<Identifier> {
     trace("identifier_parser", move |input: &mut Input<'s>| {
@@ -571,7 +621,7 @@ mod test {
         let ast = match parse_ast.parse(s) {
             Ok(ast) => ast,
             Err(ref e) => {
-                panic!("parsing failed: {e}");
+                panic!("parsing failed: {e:?}");
             }
         };
         assert_eq!(ast.use_statements.len(), 3);

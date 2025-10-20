@@ -14,6 +14,9 @@ impl PhyConfig {
     pub fn set_speed(&mut self, data__: ethernet::DataRate) {
         self.0.set_field::<2, 0>(data__.into());
     }
+    pub fn speed_attrs(&self) -> &'static [(&'static str, &'static str)] {
+        &[]
+    }
     /// Signal reach the phy is configured for.
     pub fn get_reach(&self) -> Result<ethernet::Reach, rust_rpi::OutOfRange> {
         self.0.get_field::<3, 8>().try_into()
@@ -21,6 +24,9 @@ impl PhyConfig {
     /// Signal reach the phy is configured for.
     pub fn set_reach(&mut self, data__: ethernet::Reach) {
         self.0.set_field::<3, 8>(data__.into());
+    }
+    pub fn reach_attrs(&self) -> &'static [(&'static str, &'static str)] {
+        &[]
     }
     /// Number of lanes the phy is using.
     pub fn get_lanes(&self) -> Result<Lanes, rust_rpi::OutOfRange> {
@@ -30,6 +36,9 @@ impl PhyConfig {
     pub fn set_lanes(&mut self, data__: Lanes) {
         self.0.set_field::<3, 16>(data__.into());
     }
+    pub fn lanes_attrs(&self) -> &'static [(&'static str, &'static str)] {
+        &[]
+    }
     /// Type of forward error correction to use.
     pub fn get_fec(&self) -> Result<ethernet::Fec, rust_rpi::OutOfRange> {
         self.0.get_field::<2, 20>().try_into()
@@ -37,6 +46,9 @@ impl PhyConfig {
     /// Type of forward error correction to use.
     pub fn set_fec(&mut self, data__: ethernet::Fec) {
         self.0.set_field::<2, 20>(data__.into());
+    }
+    pub fn fec_attrs(&self) -> &'static [(&'static str, &'static str)] {
+        &[]
     }
     /// Type of modulation used on the wire.
     pub fn get_modulation(&self) -> Result<cei::Modulation, rust_rpi::OutOfRange> {
@@ -46,11 +58,17 @@ impl PhyConfig {
     pub fn set_modulation(&mut self, data__: cei::Modulation) {
         self.0.set_field::<1, 24>(data__.into());
     }
+    pub fn modulation_attrs(&self) -> &'static [(&'static str, &'static str)] {
+        &[]
+    }
     pub fn value(&self) -> BitSet<32> {
         self.0
     }
     pub fn reset(&mut self) {
         self.0 = BitSet::<32>::ZERO;
+    }
+    pub fn attrs(&self) -> &'static [(&'static str, &'static str)] {
+        &[]
     }
 }
 impl From<u32> for PhyConfig {
@@ -141,19 +159,31 @@ impl PhyStatus {
     pub fn get_carrier(&self) -> bool {
         bool::from(self.0.get_field::<1, 0>())
     }
+    pub fn carrier_attrs(&self) -> &'static [(&'static str, &'static str)] {
+        &[]
+    }
     /// Indicates if a signal error has been recieved by the MAU.
     pub fn get_signal_error(&self) -> bool {
         bool::from(self.0.get_field::<1, 1>())
     }
+    pub fn signal_error_attrs(&self) -> &'static [(&'static str, &'static str)] {
+        &[]
+    }
     /// Indicates that data in the signal received from the MAU is valid.
     pub fn get_data_valid(&self) -> bool {
         bool::from(self.0.get_field::<1, 2>())
+    }
+    pub fn data_valid_attrs(&self) -> &'static [(&'static str, &'static str)] {
+        &[]
     }
     pub fn value(&self) -> BitSet<32> {
         self.0
     }
     pub fn reset(&mut self) {
         self.0 = BitSet::<32>::ZERO;
+    }
+    pub fn attrs(&self) -> &'static [(&'static str, &'static str)] {
+        &[]
     }
 }
 impl From<u32> for PhyStatus {
@@ -237,6 +267,11 @@ impl core::fmt::Display for PhyStatus {
 #[derive(Debug, Default)]
 /// Metadata value
 pub struct Metadata([u8; 32]);
+impl Metadata {
+    pub fn attrs(&self) -> &'static [(&'static str, &'static str)] {
+        &[]
+    }
+}
 ///Instance of a [`Metadata`]
 pub struct MetadataInstance {
     pub msel_id: u32,
@@ -244,6 +279,11 @@ pub struct MetadataInstance {
 #[derive(Debug, Default)]
 /// Firmware instruction
 pub struct FirmwareInstruction([u8; 32]);
+impl FirmwareInstruction {
+    pub fn attrs(&self) -> &'static [(&'static str, &'static str)] {
+        &[]
+    }
+}
 ///Instance of a [`FirmwareInstruction`]
 pub struct FirmwareInstructionInstance {
     pub msel_id: u32,
@@ -260,11 +300,17 @@ impl Debug {
     pub fn set_value(&mut self, data__: BitSet<32>) {
         self.0.set_field::<32, 0>(data__);
     }
+    pub fn value_attrs(&self) -> &'static [(&'static str, &'static str)] {
+        &[]
+    }
     pub fn value(&self) -> BitSet<32> {
         self.0
     }
     pub fn reset(&mut self) {
         bitset_macro::bitset!(32, 4294967295);
+    }
+    pub fn attrs(&self) -> &'static [(&'static str, &'static str)] {
+        &[]
     }
 }
 impl From<u32> for Debug {
@@ -379,6 +425,11 @@ impl TryFrom<BitSet<3>> for Lanes {
             .map_err(|_| rust_rpi::OutOfRange::EnumValueOutOfRange)
     }
 }
+impl Lanes {
+    pub fn attrs(&self) -> &'static [(&'static str, &'static str)] {
+        &[]
+    }
+}
 /// Phy registers.
 #[derive(Default, Debug)]
 pub struct PhyInstance {
@@ -401,6 +452,9 @@ impl Client {
             addr: self.addr + 0x100,
         }
     }
+    pub fn version_attrs(&self) -> &'static [(&'static str, &'static str)] {
+        &[]
+    }
     /// A block for each of the four phys.
     pub fn phys(&self, index: u32) -> Result<PhyInstance, rust_rpi::OutOfRange> {
         if index > 4 {
@@ -410,11 +464,20 @@ impl Client {
             addr: self.addr + 0x6000 + (index * 0x1000),
         })
     }
+    pub fn phys_attrs(&self) -> &'static [(&'static str, &'static str)] {
+        &[]
+    }
     /// The NIC's firmware.
     pub fn firmware(&self) -> FirmwareInstance {
         FirmwareInstance {
             addr: self.addr + 0x10000,
         }
+    }
+    pub fn firmware_attrs(&self) -> &'static [(&'static str, &'static str)] {
+        &[]
+    }
+    pub fn attrs(&self) -> &'static [(&'static str, &'static str)] {
+        &[]
     }
 }
 impl FirmwareInstance {
@@ -422,11 +485,20 @@ impl FirmwareInstance {
     pub fn metadata(&self) -> MetadataInstance {
         MetadataInstance { msel_id: 0 }
     }
+    pub fn metadata_attrs(&self) -> &'static [(&'static str, &'static str)] {
+        &[]
+    }
     /// Instruction section of firmware
     pub fn instructions(&self) -> FirmwareInstructionInstance {
         FirmwareInstructionInstance {
             msel_id: 1,
         }
+    }
+    pub fn instructions_attrs(&self) -> &'static [(&'static str, &'static str)] {
+        &[]
+    }
+    pub fn attrs(&self) -> &'static [(&'static str, &'static str)] {
+        &[]
     }
 }
 impl PhyInstance {
@@ -436,11 +508,17 @@ impl PhyInstance {
             addr: self.addr,
         }
     }
+    pub fn version_attrs(&self) -> &'static [(&'static str, &'static str)] {
+        &[]
+    }
     /// test register.
     pub fn debug(&self) -> DebugInstance {
         DebugInstance {
             addr: self.addr + 0x10,
         }
+    }
+    pub fn debug_attrs(&self) -> &'static [(&'static str, &'static str)] {
+        &[]
     }
     /// Configuration register.
     pub fn config(&self) -> PhyConfigInstance {
@@ -448,11 +526,20 @@ impl PhyInstance {
             addr: self.addr + 0x200,
         }
     }
+    pub fn config_attrs(&self) -> &'static [(&'static str, &'static str)] {
+        &[]
+    }
     /// Status register.
     pub fn status(&self) -> PhyStatusInstance {
         PhyStatusInstance {
             addr: self.addr + 0x400,
         }
+    }
+    pub fn status_attrs(&self) -> &'static [(&'static str, &'static str)] {
+        &[]
+    }
+    pub fn attrs(&self) -> &'static [(&'static str, &'static str)] {
+        &[("foo", "this is an attribute"), ("bar", "embedded quota\\\" attr")]
     }
 }
 pub mod cei {
@@ -480,6 +567,11 @@ pub mod cei {
         fn try_from(value: BitSet<1>) -> Result<Self, Self::Error> {
             Self::try_from(u8::from(value))
                 .map_err(|_| rust_rpi::OutOfRange::EnumValueOutOfRange)
+        }
+    }
+    impl Modulation {
+        pub fn attrs(&self) -> &'static [(&'static str, &'static str)] {
+            &[]
         }
     }
 }
@@ -526,6 +618,11 @@ pub mod ethernet {
                 .map_err(|_| rust_rpi::OutOfRange::EnumValueOutOfRange)
         }
     }
+    impl Reach {
+        pub fn attrs(&self) -> &'static [(&'static str, &'static str)] {
+            &[]
+        }
+    }
     /// Forward error correction mode.
     #[derive(num_enum::TryFromPrimitive, PartialEq, Debug)]
     #[repr(u8)]
@@ -551,6 +648,11 @@ pub mod ethernet {
         fn try_from(value: BitSet<2>) -> Result<Self, Self::Error> {
             Self::try_from(u8::from(value))
                 .map_err(|_| rust_rpi::OutOfRange::EnumValueOutOfRange)
+        }
+    }
+    impl Fec {
+        pub fn attrs(&self) -> &'static [(&'static str, &'static str)] {
+            &[]
         }
     }
     /// Data rate specification.
@@ -583,6 +685,11 @@ pub mod ethernet {
                 .map_err(|_| rust_rpi::OutOfRange::EnumValueOutOfRange)
         }
     }
+    impl DataRate {
+        pub fn attrs(&self) -> &'static [(&'static str, &'static str)] {
+            &[]
+        }
+    }
     /** Test block
 
  This block isn't referenced anywhere.  It exists simply to exercise the
@@ -598,6 +705,12 @@ pub mod ethernet {
                 addr: self.addr,
             }
         }
+        pub fn version_attrs(&self) -> &'static [(&'static str, &'static str)] {
+            &[]
+        }
+        pub fn attrs(&self) -> &'static [(&'static str, &'static str)] {
+            &[]
+        }
     }
 }
 pub mod version {
@@ -611,11 +724,17 @@ pub mod version {
         pub fn get_value(&self) -> BitSet<32> {
             self.0.get_field::<32, 0>()
         }
+        pub fn value_attrs(&self) -> &'static [(&'static str, &'static str)] {
+            &[]
+        }
         pub fn value(&self) -> BitSet<32> {
             self.0
         }
         pub fn reset(&mut self) {
             self.0 = BitSet::<32>::ZERO;
+        }
+        pub fn attrs(&self) -> &'static [(&'static str, &'static str)] {
+            &[]
         }
     }
     impl From<u32> for Version {
@@ -706,6 +825,12 @@ pub mod version {
         /// Version register.
         pub fn version(&self) -> VersionInstance {
             VersionInstance { addr: self.addr }
+        }
+        pub fn version_attrs(&self) -> &'static [(&'static str, &'static str)] {
+            &[]
+        }
+        pub fn attrs(&self) -> &'static [(&'static str, &'static str)] {
+            &[]
         }
     }
 }

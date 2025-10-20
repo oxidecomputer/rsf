@@ -1,3 +1,4 @@
+pub use crate::common::Attribute;
 pub use crate::common::Enum;
 
 use crate::{
@@ -76,6 +77,7 @@ pub struct Model {
     pub enums: Vec<Arc<Enum>>,
     pub registers: Vec<Arc<Register>>,
     pub blocks: Vec<Arc<Block>>,
+    pub attrs: Vec<Arc<Attribute>>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -211,6 +213,9 @@ impl Model {
 
 impl Display for Model {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for x in &self.attrs {
+            writeln!(f, "{x}")?;
+        }
         let name = if self.id.is_empty() {
             "root"
         } else {
@@ -235,12 +240,18 @@ impl Display for Register {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         writeln!(
             f,
-            "{}\n{} {}{}{}{}",
+            "{}\n{}{} {}{}{}{}",
             self.doc
                 .iter()
                 .map(|x| x.trim())
                 .collect::<Vec<_>>()
                 .join("\n  ")
+                .dimmed(),
+            self.attrs
+                .iter()
+                .map(|attr| format!("{attr}\n"))
+                .collect::<Vec<_>>()
+                .join("")
                 .dimmed(),
             "register".blue(),
             self.id.name.cyan(),
@@ -263,12 +274,18 @@ impl Display for Field {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "{}\n  {}{} {} {}",
+            "{}\n  {}\n  {}{} {} {}",
             self.doc
                 .iter()
                 .map(|x| x.trim())
                 .collect::<Vec<_>>()
                 .join("\n  ")
+                .dimmed(),
+            self.attrs
+                .iter()
+                .map(|attr| format!("{attr}\n  "))
+                .collect::<Vec<_>>()
+                .join("")
                 .dimmed(),
             self.id.name,
             ":".dimmed(),
@@ -305,6 +322,9 @@ impl Display for Enum {
 
 impl Display for Block {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for x in &self.attrs {
+            writeln!(f, "{}", format!("{x}").dimmed())?;
+        }
         writeln!(f, "{} {}", "block".blue(), self.id.name.cyan())?;
         for x in &self.elements {
             writeln!(f, "  {x}")?;
@@ -475,6 +495,7 @@ impl ModelModules {
                 enums: vec![],
                 registers: vec![],
                 blocks: vec![],
+                attrs: vec![],
             },
         };
 
@@ -497,6 +518,7 @@ impl ModelModules {
                     mode: f.mode.clone(),
                     typ: mm.resolve_field_type(&f.typ)?,
                     offset: f.offset.clone(),
+                    attrs: f.attrs.clone(),
                 });
             }
             mm.root.registers.push(Arc::new(Register {
@@ -506,6 +528,7 @@ impl ModelModules {
                 sram: r.sram,
                 reset_value: r.reset_value.clone(),
                 fields,
+                attrs: r.attrs.clone(),
             }));
         }
 
@@ -539,6 +562,7 @@ impl ModelModules {
                         },
                     },
                     offset: e.offset.clone(),
+                    attrs: e.attrs.clone(),
                 })
             }
             mm.root.blocks.push(Arc::new(Block {
@@ -546,6 +570,7 @@ impl ModelModules {
                 id: b.id.clone(),
                 sram: b.sram,
                 elements,
+                attrs: b.attrs.clone(),
             }));
         }
 

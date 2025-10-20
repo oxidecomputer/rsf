@@ -1,15 +1,15 @@
 //! Rust code generation
 
 use crate::ast::Number;
-use crate::common::{FieldMode, NumberFormat, Typename};
+use crate::common::{Attribute, FieldMode, NumberFormat, Typename};
 use crate::model::{Block, Component, FieldType, FieldUserType, Register};
 use crate::model::{ModelModules, Visitor};
 use anyhow::{Result, anyhow};
 use camino::Utf8Path;
 use camino_tempfile::NamedUtf8TempFile;
 use convert_case::{Case, Casing};
-use proc_macro2::TokenStream;
-use quote::{format_ident, quote};
+use proc_macro2::{Punct, Spacing, TokenStream};
+use quote::{ToTokens, TokenStreamExt, format_ident, quote};
 use std::collections::BTreeMap;
 use std::io::Write;
 use std::str::FromStr;
@@ -61,6 +61,7 @@ impl CodegenVisitor {
             format_ident!("{}Instance", reg.id.name.to_case(Case::Pascal));
 
         let doc = reg.doc.join("\n");
+        let attrs = attrs_accessor(&format_ident!("attrs"), &reg.attrs);
         let instance_doc = format!("Instance of a [`{}`]", reg.id.name);
 
         self.register_definitions.extend(quote! {
@@ -68,6 +69,10 @@ impl CodegenVisitor {
             #[derive(Debug, Default)]
             #[doc = #doc]
             pub struct #name([u8; #width]);
+
+            impl #name {
+                #attrs
+            }
 
             #[doc = #instance_doc]
             pub struct #instance_name {
@@ -89,9 +94,10 @@ impl Visitor for CodegenVisitor {
         for f in &reg.fields {
             let doc = f.doc.join("\n");
 
-            let getter = format_ident!("get_{}", f.id.name);
-            let setter = format_ident!("set_{}", f.id.name);
             let fname_str = &f.id.name;
+            let getter = format_ident!("get_{fname_str}");
+            let setter = format_ident!("set_{fname_str}");
+            let attrs_getter = format_ident!("{fname_str}_attrs");
 
             let offset = proc_macro2::Literal::u128_unsuffixed(f.offset.value);
 
@@ -206,10 +212,11 @@ impl Visitor for CodegenVisitor {
                             pub fn #setter(&mut self, data__: #typename) {
                                 self.0.set_field::<#width, #offset>(data__.into());
                             }
-                        })
+                        });
                     }
                 }
             }
+            fields.extend(attrs_accessor(&attrs_getter, &f.attrs));
         }
         let addr_type: TokenStream = self.addr_type.into();
         let value_type: TokenStream = self.value_type.into();
@@ -358,6 +365,7 @@ impl Visitor for CodegenVisitor {
             format_ident!("f")
         };
 
+        let attrs = attrs_accessor(&format_ident!("attrs"), &reg.attrs);
         self.register_definitions.extend(quote! {
 
             #[derive(Default, Debug)]
@@ -372,6 +380,7 @@ impl Visitor for CodegenVisitor {
                 pub fn reset(&mut self) {
                     #reset
                 }
+                #attrs
             }
 
             #to_from_value
@@ -403,6 +412,7 @@ impl Visitor for CodegenVisitor {
             _ => panic!("enums cannot be more than 128 bits wide"),
         };
         let doc = e.doc.join("\n");
+        let attrs = attrs_accessor(&format_ident!("attrs"), &e.attrs);
 
         let mut alts = TokenStream::default();
         for a in &e.alternatives {
@@ -456,6 +466,9 @@ impl Visitor for CodegenVisitor {
 
                 }
             }
+            impl #name {
+                #attrs
+            }
         });
     }
 
@@ -476,7 +489,7 @@ impl Visitor for CodegenVisitor {
         self.block_definitions.extend(quote! {
             #[doc = #doc]
             #[derive(Default, Debug)]
-            pub struct #block_name{
+            pub struct #block_name {
                 pub addr: #addr_type
             }
         });
@@ -507,12 +520,16 @@ impl Visitor for CodegenVisitor {
                 }
             };
 
+            let (id_name, typ) = match &element.component {
+                Component::Single { id, typ, .. } => (&id.name, typ),
+                Component::Array { id, typ, .. } => (&id.name, typ),
+            };
+            let name = id_name.to_case(Case::Snake);
+            let method_name = format_ident!("{name}");
+            let attrs_name = format_ident!("{name}_attrs");
+            let type_name = typename_to_qualified_ident(typ, "Instance");
             match &element.component {
-                Component::Single { id, typ } => {
-                    let method_name =
-                        format_ident!("{}", id.name.to_case(Case::Snake));
-                    let type_name =
-                        typename_to_qualified_ident(typ, "Instance");
+                Component::Single { .. } => {
                     if block.sram {
                         tokens.extend(quote! {
                             #[doc = #doc]
@@ -532,18 +549,10 @@ impl Visitor for CodegenVisitor {
                             }
                         });
                     }
-                    self.block_methods.insert(current_block.clone(), tokens);
                 }
                 Component::Array {
-                    id,
-                    typ,
-                    length,
-                    spacing,
+                    length, spacing, ..
                 } => {
-                    let method_name =
-                        format_ident!("{}", id.name.to_case(Case::Snake));
-                    let type_name =
-                        typename_to_qualified_ident(typ, "Instance");
                     let spacing = proc_macro2::Literal::from_str(&format!(
                         "0x{:x}",
                         spacing.value
@@ -574,10 +583,18 @@ impl Visitor for CodegenVisitor {
                         }
                     });
                     }
-                    self.block_methods.insert(current_block.clone(), tokens);
                 }
             }
+            tokens.extend(attrs_accessor(&attrs_name, &element.attrs));
+            self.block_methods.insert(current_block.clone(), tokens);
         }
+        let mut tokens = self
+            .block_methods
+            .get(&current_block)
+            .cloned()
+            .unwrap_or_default();
+        tokens.extend(attrs_accessor(&format_ident!("attrs"), &block.attrs));
+        self.block_methods.insert(current_block.clone(), tokens);
     }
 
     fn block_component(
@@ -787,4 +804,37 @@ fn number_to_token(n: &Number) -> proc_macro2::Literal {
         ),
     }
     .unwrap()
+}
+
+impl ToTokens for Attribute {
+    fn to_tokens(&self, tokens: &mut TokenStream) {
+        let name = &self.id.name;
+        let value = &self.value;
+        tokens.extend(quote! {(#name, #value)});
+    }
+}
+
+struct AttrSlice<'a>(&'a [Attribute]);
+
+impl ToTokens for AttrSlice<'_> {
+    fn to_tokens(&self, tokens: &mut TokenStream) {
+        for (k, attr) in self.0.iter().enumerate() {
+            if k > 0 {
+                tokens.append(Punct::new(',', Spacing::Alone));
+            }
+            attr.to_tokens(tokens);
+        }
+    }
+}
+
+fn attrs_accessor(
+    name: &proc_macro2::Ident,
+    attrs: &[Attribute],
+) -> TokenStream {
+    let attrs = AttrSlice(attrs);
+    quote! {
+        pub fn #name(&self) -> &'static [(&'static str, &'static str)] {
+            &[#attrs]
+        }
+    }
 }
