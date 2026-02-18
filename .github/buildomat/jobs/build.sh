@@ -17,5 +17,5 @@ cargo fmt -- --check
 cargo clippy --all-targets -- --deny warnings
 
 banner "test"
-cargo install cargo-nextest
+cargo install cargo-nextest --locked
 cargo nextest run --features test_generated
