@@ -495,7 +495,7 @@ impl Visitor for CodegenVisitor {
         });
 
         let mut elements = block.elements.clone();
-        elements.sort_by(|a, b| a.offset.value.cmp(&b.offset.value));
+        elements.sort_by_key(|a| a.offset.value);
         for (idx, element) in elements.iter().enumerate() {
             let doc = element.doc.join("\n");
             let mut tokens = self
