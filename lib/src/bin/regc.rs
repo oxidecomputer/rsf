@@ -26,6 +26,9 @@ pub enum Commands {
 
     /// Print information about a register
     RegInfo(RegInfo),
+
+    /// Find registers containing a field with the given name
+    FieldInfo(FieldInfo),
 }
 
 #[derive(Parser, Debug)]
@@ -40,6 +43,12 @@ pub struct RegInfo {
     /// Address of the register to show. Hex or decimal values accepted.
     #[clap(long, conflicts_with = "name", value_parser = parse_hex_or_dec)]
     address: Option<u128>,
+}
+
+#[derive(Parser, Debug)]
+pub struct FieldInfo {
+    /// Name of the field to search for (regex supported)
+    name: String,
 }
 
 fn main() {
@@ -84,6 +93,12 @@ fn main() {
                 };
                 resolved.root.accept(&mut v);
             };
+        }
+        Commands::FieldInfo(cmd) => {
+            let mut v = FieldInfoVisitor {
+                field_name: cmd.name,
+            };
+            resolved.root.accept(&mut v);
         }
     };
 }
@@ -175,6 +190,45 @@ impl Visitor for RegInfoVisitor {
                     println!("{reg}");
                 }
             }
+        }
+    }
+}
+
+struct FieldInfoVisitor {
+    field_name: String,
+}
+
+impl Visitor for FieldInfoVisitor {
+    fn register_component(
+        &mut self,
+        id: &Identifier,
+        path: &[Identifier],
+        reg: Arc<Register>,
+        _array_index: Option<u128>,
+        addr: u128,
+    ) {
+        let re = regex::Regex::new(&self.field_name).expect("valid regex");
+        let has_match = reg.fields.iter().any(|f| re.is_match(&f.id.name));
+        if has_match {
+            let fullpath = if path.is_empty() {
+                id.name.clone()
+            } else {
+                format!(
+                    "{}.{}",
+                    path.iter()
+                        .map(|x| x.name.as_str())
+                        .collect::<Vec<_>>()
+                        .join("."),
+                    id.name,
+                )
+            };
+            println!(
+                "{}{} {}",
+                format!("0x{addr:x}").green(),
+                ":".dimmed(),
+                fullpath
+            );
+            println!("{reg}");
         }
     }
 }
