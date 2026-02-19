@@ -1,0 +1,7 @@
+/// Channel state for module B.
+enum<1> State {
+    /// Inactive
+    Inactive = 0b0,
+    /// Active
+    Active = 0b1,
+}

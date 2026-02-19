@@ -1,0 +1,7 @@
+use mod_a::channel;
+
+/// Module A config register.
+register<32> AConfig {
+    /// Channel mode.
+    mode: rw channel::Mode @ 0,
+}

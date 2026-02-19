@@ -1,0 +1,9 @@
+/// Channel mode for module A.
+enum<2> Mode {
+    /// Disabled
+    Off = 0b00,
+    /// Low speed
+    Low = 0b01,
+    /// High speed
+    High = 0b10,
+}

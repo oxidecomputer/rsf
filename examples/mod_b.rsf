@@ -1,0 +1,7 @@
+use mod_b::channel;
+
+/// Module B status register.
+register<32> BStatus {
+    /// Channel state.
+    state: ro channel::State @ 0,
+}

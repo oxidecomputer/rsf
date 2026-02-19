@@ -576,7 +576,6 @@ pub mod cei {
     }
 }
 pub mod ethernet {
-    use super::version;
     use bitset::BitSet;
     use rust_rpi;
     /// Reach of a signal.
@@ -710,6 +709,127 @@ pub mod ethernet {
         }
         pub fn attrs(&self) -> &'static [(&'static str, &'static str)] {
             &[]
+        }
+    }
+    pub mod version {
+        use bitset::BitSet;
+        use rust_rpi;
+        #[derive(Default, Debug)]
+        /// Version number
+        pub struct Version(BitSet<32>);
+        impl Version {
+            /// Version number
+            pub fn get_value(&self) -> BitSet<32> {
+                self.0.get_field::<32, 0>()
+            }
+            pub fn value_attrs(&self) -> &'static [(&'static str, &'static str)] {
+                &[]
+            }
+            pub fn value(&self) -> BitSet<32> {
+                self.0
+            }
+            pub fn reset(&mut self) {
+                self.0 = BitSet::<32>::ZERO;
+            }
+            pub fn attrs(&self) -> &'static [(&'static str, &'static str)] {
+                &[]
+            }
+        }
+        impl From<u32> for Version {
+            fn from(value: u32) -> Self {
+                Self(BitSet::<32>::from(value))
+            }
+        }
+        impl From<Version> for u32 {
+            fn from(value: Version) -> Self {
+                u32::from(value.0)
+            }
+        }
+        ///Instance of a [`Version`]
+        pub struct VersionInstance {
+            pub addr: u32,
+        }
+        impl rust_rpi::RegisterInstance<Version, u32, u32> for VersionInstance {
+            fn cons(&self) -> Version {
+                let mut v = Version::default();
+                v.reset();
+                v
+            }
+            fn read<P: rust_rpi::Platform<u32, u32>>(
+                &self,
+                platform: &P,
+            ) -> Result<Version, P::Error> {
+                platform.read(self.addr)
+            }
+            fn write<P: rust_rpi::Platform<u32, u32>>(
+                &self,
+                platform: &P,
+                value: Version,
+            ) -> Result<(), P::Error> {
+                platform.write(self.addr, value)
+            }
+            fn try_update<
+                P: rust_rpi::Platform<u32, u32>,
+                F: FnOnce(&mut Version) -> Result<(), P::Error>,
+            >(&self, platform: &P, f: F) -> Result<(), P::Error> {
+                let mut value = self.read(platform)?;
+                f(&mut value)?;
+                self.write(platform, value)
+            }
+            fn update<P: rust_rpi::Platform<u32, u32>, F: FnOnce(&mut Version)>(
+                &self,
+                platform: &P,
+                f: F,
+            ) -> Result<(), P::Error> {
+                let mut value = self.read(platform)?;
+                f(&mut value);
+                self.write(platform, value)
+            }
+            fn try_set<
+                P: rust_rpi::Platform<u32, u32>,
+                F: FnOnce(&mut Version) -> Result<(), P::Error>,
+            >(&self, platform: &P, f: F) -> Result<(), P::Error> {
+                let mut value = Version::default();
+                value.reset();
+                f(&mut value)?;
+                self.write(platform, value)
+            }
+            fn set<P: rust_rpi::Platform<u32, u32>, F: FnOnce(&mut Version)>(
+                &self,
+                platform: &P,
+                f: F,
+            ) -> Result<(), P::Error> {
+                let mut value = Version::default();
+                value.reset();
+                f(&mut value);
+                self.write(platform, value)
+            }
+        }
+        impl core::fmt::Display for Version {
+            fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+                writeln!(
+                    f, "{}: {}/0x{:x}/0b{:b}", "value", self.get_value().to_int(), self
+                    .get_value().to_int(), self.get_value().to_int(),
+                )?;
+                Ok(())
+            }
+        }
+        /// Component version info
+        #[derive(Default, Debug)]
+        pub struct VersionInfoInstance {
+            pub addr: u32,
+        }
+        impl VersionInfoInstance {
+            /// Version register.
+            pub fn version(&self) -> VersionInstance {
+                VersionInstance { addr: self.addr }
+            }
+            pub fn version_attrs(&self) -> &'static [(&'static str, &'static str)] {
+                &[]
+            }
+            pub fn attrs(&self) -> &'static [(&'static str, &'static str)] {
+                &[]
+            }
         }
     }
 }

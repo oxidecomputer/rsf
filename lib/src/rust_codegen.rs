@@ -674,23 +674,7 @@ pub fn codegen(
 ) -> Result<String> {
     let ast = crate::parser::parse(file)?;
     let resolved = ModelModules::resolve(&ast, String::default())?;
-    let modules = resolved.get_modules()?;
-    generate_rpi(&modules, addr_type, value_type)
-}
-
-pub fn generate_rpi(
-    modules: &BTreeMap<String, Arc<ModelModules>>,
-    addr_type: AddrType,
-    value_type: ValueType,
-) -> Result<String> {
-    let mut tokens = TokenStream::new();
-    for (name, module) in modules {
-        let model_tokens =
-            generate_rpi_rec(name.to_string(), module, addr_type, value_type)?;
-        tokens.extend(quote! {
-            #model_tokens
-        });
-    }
+    let tokens = generate_module_tokens(&resolved, addr_type, value_type)?;
 
     let file: syn::File = syn::parse2(tokens.clone()).map_err(|e| {
         let generated = tokens
@@ -712,8 +696,11 @@ pub fn generate_rpi(
     Ok(code)
 }
 
-pub fn generate_rpi_rec(
-    name: String,
+/// Generate tokens for a module and all of its sub-modules by walking the
+/// `ModelModules` tree directly. Each used module becomes a nested `pub mod`
+/// block, which correctly handles the case where different subtrees contain
+/// modules with the same name.
+fn generate_module_tokens(
     model: &ModelModules,
     addr_type: AddrType,
     value_type: ValueType,
@@ -728,25 +715,15 @@ pub fn generate_rpi_rec(
     model.root.accept(&mut cgv);
     let mut tokens = cgv.tokens();
 
-    // If the name is not empty, then we are generating code for a module.  We
-    // need to build the module definition and the "use" instructions for all
-    // other modules being imported.
-    if !name.is_empty() {
-        let mut mod_tokens = TokenStream::new();
-        let mut import_tokens = TokenStream::new();
-
-        for name in model.used.keys() {
-            let import_name = format_ident!("{}", name.to_case(Case::Snake));
-            import_tokens.extend(quote! { use super::#import_name; });
-        }
+    // Recursively generate nested modules for each dependency.
+    for (name, sub) in &model.used {
+        let sub_tokens = generate_module_tokens(sub, addr_type, value_type)?;
         let modname = format_ident!("{}", name.to_case(Case::Snake));
-        mod_tokens.extend(quote! {
+        tokens.extend(quote! {
             pub mod #modname {
-                #import_tokens
-                #tokens
+                #sub_tokens
             }
         });
-        tokens = mod_tokens;
     }
 
     Ok(tokens)
@@ -773,10 +750,8 @@ fn typename_to_qualified_ident(
 
     let typ = format_ident!("{}{}", typename.to_case(Case::Pascal), suffix);
 
-    // We only care about the last module in the path. While a module path can
-    // be arbitrarily deep depending on RSF source organization, the actual
-    // module definitions are not nested, it's just a single flat module
-    // definition space defined by a collection of RSF files.
+    // We only care about the last module in the path. Types reference their
+    // direct parent module (a child `pub mod` in the generated code).
     let Some(last) = path.last() else {
         return quote! { #typ };
     };
