@@ -704,22 +704,20 @@ impl ModelModules {
     }
 
     /// Walk the full model, returning a BTreeMap containing all of the unique
-    /// models within it.  If we discover two models with identical names but
-    /// different contents, an error will be returned.
+    /// models within it. When the same module name appears in different
+    /// subtrees (e.g., two different parents each use a module called
+    /// "channel"), the first one encountered is kept. This is safe because
+    /// codegen walks the `ModelModules` tree directly and generates nested
+    /// module structures.
     pub fn get_modules(&self) -> Result<BTreeMap<String, Arc<ModelModules>>> {
         let mut mods = BTreeMap::new();
 
         mods.insert(self.root.id.to_string(), Arc::new(self.clone()));
-        for (name, m) in &self.used {
-            mods.insert(name.to_string(), m.clone());
+        for m in self.used.values() {
+            mods.entry(m.root.id.to_string())
+                .or_insert_with(|| m.clone());
             for (modname, module) in m.get_modules()? {
-                if let Some(old) = mods.insert(modname.clone(), module.clone())
-                    && old != module
-                {
-                    return Err(anyhow!(
-                        "Found conflicting definition for {modname}"
-                    ));
-                }
+                mods.entry(modname).or_insert(module);
             }
         }
 

@@ -1,0 +1,7 @@
+/// A test enum in a subdirectory module.
+enum<2> SubStatus {
+    /// Disabled
+    Disabled = 0b00,
+    /// Enabled
+    Enabled = 0b01,
+}

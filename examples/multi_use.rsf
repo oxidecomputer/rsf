@@ -1,0 +1,7 @@
+use sub::example;
+
+/// Test register using a type from a subdirectory module.
+register<32> TestReg {
+    /// Status field from sub module.
+    status: rw example::SubStatus @ 0,
+}

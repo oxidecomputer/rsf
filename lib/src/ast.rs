@@ -13,12 +13,18 @@ pub type Field = crate::common::Field<FieldType>;
 
 #[derive(Debug, Clone)]
 pub struct Use {
-    pub module: Identifier,
+    pub path: Vec<Identifier>,
 }
 
 impl Emit for Use {
     fn emit(&self, f: &mut impl Write) -> std::fmt::Result {
-        writeln!(f, "use {};", self.module.name)
+        let path = self
+            .path
+            .iter()
+            .map(|id| id.name.as_str())
+            .collect::<Vec<_>>()
+            .join("::");
+        writeln!(f, "use {path};")
     }
 }
 

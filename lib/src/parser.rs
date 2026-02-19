@@ -86,11 +86,23 @@ pub fn parse_rec(
 
     for used in &ast.use_statements {
         let mut path = Utf8PathBuf::from(modules_path);
-        path.push(format!("{}.rsf", used.module.name));
+        // All segments except the last form directory components
+        for seg in &used.path[..used.path.len() - 1] {
+            path.push(&seg.name);
+        }
+        let last = used.path.last().expect("use path must be non-empty");
+        path.push(format!("{}.rsf", last.name));
+        let use_path_str = used
+            .path
+            .iter()
+            .map(|id| id.name.as_str())
+            .collect::<Vec<_>>()
+            .join("::");
         let sub = parse_rec(&path, seen.clone())
-            .map_err(|e| anyhow!("{}: {e}", used.module.name))?;
+            .map_err(|e| anyhow!("{use_path_str}: {e}"))?;
 
-        result.used.insert(used.module.name.clone(), sub);
+        // Key by last segment only
+        result.used.insert(last.name.clone(), sub);
     }
     Ok(result)
 }
@@ -154,9 +166,10 @@ pub fn parse_use_top(input: &mut Input) -> ModalResult<Top> {
 
 pub fn parse_use(input: &mut Input) -> ModalResult<Use> {
     token("use").parse_next(input)?;
-    let module = identifier_parser.parse_next(input)?;
+    let path: Vec<Identifier> =
+        separated(1.., identifier_parser, token("::")).parse_next(input)?;
     token(";").parse_next(input)?;
-    Ok(Use { module })
+    Ok(Use { path })
 }
 
 pub fn attributes_parser(input: &mut Input) -> ModalResult<Vec<Attribute>> {
@@ -625,9 +638,9 @@ mod test {
             }
         };
         assert_eq!(ast.use_statements.len(), 3);
-        assert_eq!(ast.use_statements[0].module.name, "ethernet");
-        assert_eq!(ast.use_statements[1].module.name, "cei");
-        assert_eq!(ast.use_statements[2].module.name, "version");
+        assert_eq!(ast.use_statements[0].path[0].name, "ethernet");
+        assert_eq!(ast.use_statements[1].path[0].name, "cei");
+        assert_eq!(ast.use_statements[2].path[0].name, "version");
 
         assert_eq!(ast.enums.len(), 1);
         assert_eq!(ast.enums[0].id.name, "Lanes");
@@ -759,5 +772,56 @@ mod test {
         );
 
         println!("{ast:#?}")
+    }
+
+    #[test]
+    fn multi_level_use() {
+        let text = "use sub::example;\n";
+        let s = Input::new(text);
+        let ast = parse_ast.parse(s).expect("parse failed");
+        assert_eq!(ast.use_statements.len(), 1);
+        assert_eq!(ast.use_statements[0].path.len(), 2);
+        assert_eq!(ast.use_statements[0].path[0].name, "sub");
+        assert_eq!(ast.use_statements[0].path[1].name, "example");
+    }
+
+    #[test]
+    fn multi_level_use_file_resolution() {
+        let modules =
+            parse("../examples/multi_use.rsf".into()).expect("parse failed");
+        // The key in `used` should be the last segment "example"
+        assert!(modules.used.contains_key("example"));
+        let sub = &modules.used["example"];
+        assert_eq!(sub.root.enums.len(), 1);
+        assert_eq!(sub.root.enums[0].id.name, "SubStatus");
+    }
+
+    #[test]
+    fn same_name_modules_in_different_subtrees() {
+        // mod_a and mod_b each use a module called "channel" but from
+        // different directories with different content. This must not error.
+        let modules =
+            parse("../examples/conflict.rsf".into()).expect("parse failed");
+
+        // Root uses mod_a and mod_b
+        assert!(modules.used.contains_key("mod_a"));
+        assert!(modules.used.contains_key("mod_b"));
+
+        // Each has its own "channel" sub-module with different types
+        let mod_a = &modules.used["mod_a"];
+        assert!(mod_a.used.contains_key("channel"));
+        assert_eq!(mod_a.used["channel"].root.enums[0].id.name, "Mode");
+
+        let mod_b = &modules.used["mod_b"];
+        assert!(mod_b.used.contains_key("channel"));
+        assert_eq!(mod_b.used["channel"].root.enums[0].id.name, "State");
+
+        // Model resolution must also succeed
+        let resolved =
+            crate::model::ModelModules::resolve(&modules, String::new())
+                .expect("resolve failed");
+
+        // get_modules must not error despite same-named sub-modules
+        resolved.get_modules().expect("get_modules failed");
     }
 }

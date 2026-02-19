@@ -1,0 +1,10 @@
+use mod_a;
+use mod_b;
+
+/// Top block using both modules with same-named sub-modules.
+block Main {
+    /// Module A config.
+    a_config: mod_a::AConfig @ 0x000,
+    /// Module B status.
+    b_status: mod_b::BStatus @ 0x100,
+}
