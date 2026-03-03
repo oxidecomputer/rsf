@@ -2,7 +2,7 @@
 #![feature(generic_const_exprs)]
 
 use expectorate::assert_contents;
-use rsf::rust_codegen::{AddrType, ValueType};
+use rsf::rust_codegen::AddrType;
 
 // Test code generation in terms of expected syntax.
 #[test]
@@ -10,7 +10,6 @@ fn test_codegen() {
     let output = match rsf::rust_codegen::codegen(
         "../examples/nic.rsf".into(),
         AddrType::U32,
-        ValueType::U32,
     ) {
         Ok(out) => out,
         Err(ref e) => {
