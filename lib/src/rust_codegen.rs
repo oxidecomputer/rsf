@@ -18,7 +18,6 @@ use std::sync::Arc;
 #[derive(Default)]
 struct CodegenVisitor {
     addr_type: AddrType,
-    value_type: ValueType,
     prelude: TokenStream,
     register_definitions: TokenStream,
     enum_definitions: TokenStream,
@@ -219,7 +218,7 @@ impl Visitor for CodegenVisitor {
             fields.extend(attrs_accessor(&attrs_getter, &f.attrs));
         }
         let addr_type: TokenStream = self.addr_type.into();
-        let value_type: TokenStream = self.value_type.into();
+        let value_type = width_to_value_type(reg.width.value);
 
         let instance_name =
             format_ident!("{}Instance", reg.id.name.to_case(Case::Pascal));
@@ -252,8 +251,8 @@ impl Visitor for CodegenVisitor {
         //
         // TODO: maybe there should be a more explicit `dma` qualifier instead.
         // Similar to the `sram` qualifier.
-        let to_from_value = if reg.width.value <= u128::from(self.value_type) {
-            quote! {
+        let (to_from_value, rpi_impl) = if let Some(value_type) = &value_type {
+            let to_from = quote! {
                 impl From<#value_type> for #name {
                     fn from(value: #value_type) -> Self {
                         //TODO should be fallible
@@ -268,13 +267,8 @@ impl Visitor for CodegenVisitor {
                         #value_type::from(value.0)
                     }
                 }
-            }
-        } else {
-            quote! {}
-        };
-
-        let rpi_impl = if reg.width.value <= u128::from(self.value_type) {
-            quote! {
+            };
+            let rpi = quote! {
                 impl rust_rpi::RegisterInstance<#name, #addr_type, #value_type> for #instance_name {
                     fn cons(&self) -> #name {
                         let mut v = #name::default();
@@ -354,9 +348,10 @@ impl Visitor for CodegenVisitor {
                         self.write(platform, value)
                     }
                 }
-            }
+            };
+            (to_from, rpi)
         } else {
-            quote! {}
+            (quote! {}, quote! {})
         };
 
         let format_param = if display_impl.is_empty() {
@@ -403,14 +398,8 @@ impl Visitor for CodegenVisitor {
 
     fn enumeration(&mut self, e: Arc<crate::ast::Enum>) {
         let name = format_ident!("{}", e.id.name.to_case(Case::Pascal));
-        let repr = match e.width.value {
-            x if x <= 8 => quote! { u8 },
-            x if x <= 16 => quote! { u16 },
-            x if x <= 32 => quote! { u32 },
-            x if x <= 64 => quote! { u64 },
-            x if x <= 128 => quote! { u128 },
-            _ => panic!("enums cannot be more than 128 bits wide"),
-        };
+        let repr = width_to_value_type(e.width.value)
+            .expect("enums cannot be more than 128 bits wide");
         let doc = e.doc.join("\n");
         let attrs = attrs_accessor(&format_ident!("attrs"), &e.attrs);
 
@@ -632,49 +621,21 @@ impl From<AddrType> for TokenStream {
     }
 }
 
-/// The value type to be used for register access in generated code.
-#[derive(Copy, Clone, Default)]
-pub enum ValueType {
-    U8,
-    U16,
-    U32,
-    #[default]
-    U64,
-    U128,
-}
-
-impl From<ValueType> for TokenStream {
-    fn from(value: ValueType) -> Self {
-        match value {
-            ValueType::U8 => quote! { u8 },
-            ValueType::U16 => quote! { u16 },
-            ValueType::U32 => quote! { u32 },
-            ValueType::U64 => quote! { u64 },
-            ValueType::U128 => quote! { u128 },
-        }
+fn width_to_value_type(width: u128) -> Option<TokenStream> {
+    match width {
+        x if x <= 8 => Some(quote! { u8 }),
+        x if x <= 16 => Some(quote! { u16 }),
+        x if x <= 32 => Some(quote! { u32 }),
+        x if x <= 64 => Some(quote! { u64 }),
+        x if x <= 128 => Some(quote! { u128 }),
+        _ => None,
     }
 }
 
-impl From<ValueType> for u128 {
-    fn from(value: ValueType) -> Self {
-        match value {
-            ValueType::U8 => 8,
-            ValueType::U16 => 16,
-            ValueType::U32 => 32,
-            ValueType::U64 => 64,
-            ValueType::U128 => 128,
-        }
-    }
-}
-
-pub fn codegen(
-    file: &Utf8Path,
-    addr_type: AddrType,
-    value_type: ValueType,
-) -> Result<String> {
+pub fn codegen(file: &Utf8Path, addr_type: AddrType) -> Result<String> {
     let ast = crate::parser::parse(file)?;
     let resolved = ModelModules::resolve(&ast, String::default())?;
-    let tokens = generate_module_tokens(&resolved, addr_type, value_type)?;
+    let tokens = generate_module_tokens(&resolved, addr_type)?;
 
     let file: syn::File = syn::parse2(tokens.clone()).map_err(|e| {
         let generated = tokens
@@ -703,11 +664,9 @@ pub fn codegen(
 fn generate_module_tokens(
     model: &ModelModules,
     addr_type: AddrType,
-    value_type: ValueType,
 ) -> Result<TokenStream> {
     let mut cgv = CodegenVisitor {
         addr_type,
-        value_type,
         prelude: use_statements(),
         ..Default::default()
     };
@@ -717,7 +676,7 @@ fn generate_module_tokens(
 
     // Recursively generate nested modules for each dependency.
     for (name, sub) in &model.used {
-        let sub_tokens = generate_module_tokens(sub, addr_type, value_type)?;
+        let sub_tokens = generate_module_tokens(sub, addr_type)?;
         let modname = format_ident!("{}", name.to_case(Case::Snake));
         tokens.extend(quote! {
             pub mod #modname {
@@ -748,7 +707,13 @@ fn typename_to_qualified_ident(
         panic!("empty split!? from: {typename}");
     };
 
-    let typ = format_ident!("{}{}", typename.to_case(Case::Pascal), suffix);
+    // The "Main" block is special-cased to generate a struct named "Client"
+    // rather than "MainInstance".
+    let typ = if *typename == "Main" {
+        format_ident!("Client")
+    } else {
+        format_ident!("{}{}", typename.to_case(Case::Pascal), suffix)
+    };
 
     // We only care about the last module in the path. Types reference their
     // direct parent module (a child `pub mod` in the generated code).
