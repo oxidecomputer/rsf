@@ -1,6 +1,5 @@
 pub use crate::common::Attribute;
 pub use crate::common::Enum;
-
 use crate::{
     ast::{self, AstModules, Identifier, Number},
     common::Typename,
@@ -14,13 +13,31 @@ use std::{
     sync::Arc,
 };
 
-//pub type Type = crate::common::Type<QualifiedType>;
+// The following are types that comprise a resolved AST. Resolved means
+// that user-defined type references have been resolved to their underlying
+// definitions.
+
 pub type Block = crate::common::Block<QualifiedComponentType>;
 pub type BlockElement = crate::common::BlockElement<QualifiedComponentType>;
 pub type Component = crate::common::Component<QualifiedComponentType>;
 pub type FieldType = crate::common::FieldType<QualifiedFieldType>;
 pub type Register = crate::common::Register<FieldType>;
 pub type Field = crate::common::Field<FieldType>;
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct Model {
+    pub id: String,
+    pub enums: Vec<Arc<Enum>>,
+    pub registers: Vec<Arc<Register>>,
+    pub blocks: Vec<Arc<Block>>,
+    pub attrs: Vec<Arc<Attribute>>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ModelModules {
+    pub root: Model,
+    pub used: BTreeMap<String, Arc<ModelModules>>,
+}
 
 impl FieldType {
     pub fn width(&self) -> u128 {
@@ -69,21 +86,6 @@ impl Typename for ComponentUserType {
             Self::Block(x) => x.id.name.clone(),
         }
     }
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct Model {
-    pub id: String,
-    pub enums: Vec<Arc<Enum>>,
-    pub registers: Vec<Arc<Register>>,
-    pub blocks: Vec<Arc<Block>>,
-    pub attrs: Vec<Arc<Attribute>>,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct ModelModules {
-    pub root: Model,
-    pub used: BTreeMap<String, Arc<ModelModules>>,
 }
 
 #[derive(Debug, Clone, PartialEq)]

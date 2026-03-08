@@ -1,9 +1,9 @@
 //! Rust code generation
 
-use crate::ast::Number;
-use crate::common::{Attribute, FieldMode, NumberFormat, Typename};
-use crate::model::{Block, Component, FieldType, FieldUserType, Register};
-use crate::model::{ModelModules, Visitor};
+use crate::ast::{Identifier, Number};
+use crate::common::{Alternative, Attribute, FieldMode, NumberFormat, Typename};
+use crate::model::{Block, Component, Field, FieldType, FieldUserType, Register};
+use crate::model::{ModelModules, QualifiedFieldType, Visitor};
 use anyhow::{Result, anyhow};
 use camino::Utf8Path;
 use camino_tempfile::NamedUtf8TempFile;
@@ -635,7 +635,8 @@ fn width_to_value_type(width: u128) -> Option<TokenStream> {
 pub fn codegen(file: &Utf8Path, addr_type: AddrType) -> Result<String> {
     let ast = crate::parser::parse(file)?;
     let resolved = ModelModules::resolve(&ast, String::default())?;
-    let tokens = generate_module_tokens(&resolved, addr_type)?;
+    let mut tokens = generate_module_tokens(&resolved, addr_type)?;
+    tokens.extend(generate_regdb_tokens(&resolved, addr_type));
 
     let file: syn::File = syn::parse2(tokens.clone()).map_err(|e| {
         let generated = tokens
@@ -777,4 +778,265 @@ fn attrs_accessor(
             &[#attrs]
         }
     }
+}
+
+// --- Register DB code generation ---
+
+struct RegDbEntry {
+    name: String,
+    address: u128,
+    register: Arc<Register>,
+}
+
+struct RegDbVisitor {
+    entries: Vec<RegDbEntry>,
+}
+
+impl Visitor for RegDbVisitor {
+    fn register_component(
+        &mut self,
+        id: &Identifier,
+        path: &[Identifier],
+        reg: Arc<Register>,
+        _array_index: Option<u128>,
+        addr: u128,
+    ) {
+        let name = if path.is_empty() {
+            id.name.clone()
+        } else {
+            format!(
+                "{}.{}",
+                path.iter()
+                    .map(|x| x.name.as_str())
+                    .collect::<Vec<_>>()
+                    .join("."),
+                id.name,
+            )
+        };
+        self.entries.push(RegDbEntry {
+            name,
+            address: addr,
+            register: reg,
+        });
+    }
+}
+
+fn generate_regdb_tokens(
+    model: &ModelModules,
+    addr_type: AddrType,
+) -> TokenStream {
+    let mut visitor = RegDbVisitor { entries: vec![] };
+    model.root.accept(&mut visitor);
+
+    let addr_type_ts: TokenStream = addr_type.into();
+
+    let inserts: Vec<TokenStream> = visitor
+        .entries
+        .iter()
+        .map(|entry| {
+            let name = &entry.name;
+            let addr = proc_macro2::Literal::u128_unsuffixed(entry.address);
+            let reg_tokens = register_construct_tokens(&entry.register);
+            quote! {
+                let _ = db.insert_unique(rsf::db::Entry {
+                    name: String::from(#name),
+                    address: #addr as #addr_type_ts,
+                    register: #reg_tokens,
+                });
+            }
+        })
+        .collect();
+
+    quote! {
+        pub fn regdb() -> rsf::db::RegisterDb<#addr_type_ts> {
+            let mut db = rsf::db::RegisterDb::new();
+            #(#inserts)*
+            db
+        }
+    }
+}
+
+fn register_construct_tokens(reg: &Register) -> TokenStream {
+    let doc = string_vec_tokens(&reg.doc);
+    let id = ident_construct_tokens(&reg.id);
+    let width = number_construct_tokens(&reg.width);
+    let reset_value = match &reg.reset_value {
+        None => quote! { None },
+        Some(n) => {
+            let n = number_construct_tokens(n);
+            quote! { Some(#n) }
+        }
+    };
+    let sram = reg.sram;
+    let fields: Vec<TokenStream> =
+        reg.fields.iter().map(field_construct_tokens).collect();
+    let attrs: Vec<TokenStream> =
+        reg.attrs.iter().map(attr_construct_tokens).collect();
+
+    quote! {
+        rsf::model::Register {
+            doc: #doc,
+            id: #id,
+            width: #width,
+            reset_value: #reset_value,
+            sram: #sram,
+            fields: vec![#(#fields),*],
+            attrs: vec![#(#attrs),*],
+        }
+    }
+}
+
+fn field_construct_tokens(f: &Field) -> TokenStream {
+    let doc = string_vec_tokens(&f.doc);
+    let id = ident_construct_tokens(&f.id);
+    let mode = field_mode_construct_tokens(&f.mode);
+    let typ = field_type_construct_tokens(&f.typ);
+    let offset = number_construct_tokens(&f.offset);
+    let attrs: Vec<TokenStream> =
+        f.attrs.iter().map(attr_construct_tokens).collect();
+
+    quote! {
+        rsf::model::Field {
+            doc: #doc,
+            id: #id,
+            mode: #mode,
+            typ: #typ,
+            offset: #offset,
+            attrs: vec![#(#attrs),*],
+        }
+    }
+}
+
+fn field_type_construct_tokens(typ: &FieldType) -> TokenStream {
+    match typ {
+        FieldType::Bool => quote! { rsf::model::FieldType::Bool },
+        FieldType::Bitfield { width } => {
+            let w = number_construct_tokens(width);
+            quote! { rsf::model::FieldType::Bitfield { width: #w } }
+        }
+        FieldType::User { id } => {
+            let qft = qualified_field_type_construct_tokens(id);
+            quote! { rsf::model::FieldType::User { id: #qft } }
+        }
+    }
+}
+
+fn qualified_field_type_construct_tokens(
+    qft: &QualifiedFieldType,
+) -> TokenStream {
+    let module_path: Vec<TokenStream> = qft
+        .module_path
+        .iter()
+        .map(|s| quote! { String::from(#s) })
+        .collect();
+    let typ = field_user_type_construct_tokens(&qft.typ);
+    quote! {
+        rsf::model::QualifiedFieldType {
+            module_path: vec![#(#module_path),*],
+            typ: #typ,
+        }
+    }
+}
+
+fn field_user_type_construct_tokens(fut: &FieldUserType) -> TokenStream {
+    match fut {
+        FieldUserType::Enum(e) => {
+            let e = enum_construct_tokens(e);
+            quote! {
+                rsf::model::FieldUserType::Enum(std::sync::Arc::new(#e))
+            }
+        }
+    }
+}
+
+fn enum_construct_tokens(e: &crate::common::Enum) -> TokenStream {
+    let doc = string_vec_tokens(&e.doc);
+    let id = ident_construct_tokens(&e.id);
+    let width = number_construct_tokens(&e.width);
+    let alts: Vec<TokenStream> =
+        e.alternatives.iter().map(alt_construct_tokens).collect();
+    let attrs: Vec<TokenStream> =
+        e.attrs.iter().map(attr_construct_tokens).collect();
+
+    quote! {
+        rsf::common::Enum {
+            doc: #doc,
+            id: #id,
+            width: #width,
+            alternatives: vec![#(#alts),*],
+            attrs: vec![#(#attrs),*],
+        }
+    }
+}
+
+fn alt_construct_tokens(a: &Alternative) -> TokenStream {
+    let doc = string_vec_tokens(&a.doc);
+    let id = ident_construct_tokens(&a.id);
+    let value = number_construct_tokens(&a.value);
+
+    quote! {
+        rsf::common::Alternative {
+            doc: #doc,
+            id: #id,
+            value: #value,
+        }
+    }
+}
+
+fn ident_construct_tokens(id: &Identifier) -> TokenStream {
+    let name = &id.name;
+    quote! { rsf::common::Identifier::new(#name) }
+}
+
+fn number_construct_tokens(n: &Number) -> TokenStream {
+    let value = proc_macro2::Literal::u128_unsuffixed(n.value);
+    let format = match &n.format {
+        NumberFormat::Binary { digits } => {
+            let d = *digits;
+            quote! { rsf::common::NumberFormat::Binary { digits: #d } }
+        }
+        NumberFormat::Hex { digits } => {
+            let d = *digits;
+            quote! { rsf::common::NumberFormat::Hex { digits: #d } }
+        }
+        NumberFormat::Decimal { digits } => {
+            let d = *digits;
+            quote! { rsf::common::NumberFormat::Decimal { digits: #d } }
+        }
+    };
+    quote! { rsf::common::Number::new(#value, #format) }
+}
+
+fn field_mode_construct_tokens(mode: &FieldMode) -> TokenStream {
+    match mode {
+        FieldMode::ReadOnly => {
+            quote! { rsf::common::FieldMode::ReadOnly }
+        }
+        FieldMode::WriteOnly => {
+            quote! { rsf::common::FieldMode::WriteOnly }
+        }
+        FieldMode::ReadWrite => {
+            quote! { rsf::common::FieldMode::ReadWrite }
+        }
+        FieldMode::Reserved => {
+            quote! { rsf::common::FieldMode::Reserved }
+        }
+    }
+}
+
+fn attr_construct_tokens(attr: &Attribute) -> TokenStream {
+    let id = ident_construct_tokens(&attr.id);
+    let value = &attr.value;
+    quote! {
+        rsf::common::Attribute {
+            id: #id,
+            value: String::from(#value),
+        }
+    }
+}
+
+fn string_vec_tokens(v: &[String]) -> TokenStream {
+    let items: Vec<TokenStream> =
+        v.iter().map(|s| quote! { String::from(#s) }).collect();
+    quote! { vec![#(#items),*] }
 }

@@ -1,8 +1,12 @@
-use std::{collections::BTreeMap, fmt::Display};
-
 pub use crate::common::{Enum, Identifier, Number};
 use crate::common::{Span, Typename};
 use std::fmt::Write;
+use std::{collections::BTreeMap, fmt::Display};
+
+// The following are types that comprise an unresolved AST. Unresolved means
+// that the AST has been successfully formed through textual parsing. However,
+// user-defined types references have not been resolved and there may be
+// undefined references in the AST.
 
 pub type FieldType = crate::common::FieldType<QualifiedType>;
 pub type Block = crate::common::Block<QualifiedType>;
@@ -10,6 +14,21 @@ pub type BlockElement = crate::common::BlockElement<QualifiedType>;
 pub type Component = crate::common::Component<QualifiedType>;
 pub type Register = crate::common::Register<FieldType>;
 pub type Field = crate::common::Field<FieldType>;
+
+#[derive(Debug, Default, Clone)]
+pub struct Ast {
+    pub use_statements: Vec<Use>,
+    pub enums: Vec<Enum>,
+    pub registers: Vec<Register>,
+    pub blocks: Vec<Block>,
+}
+
+/// A set of ASTs indexed by module name
+#[derive(Debug)]
+pub struct AstModules {
+    pub root: Ast,
+    pub used: BTreeMap<String, AstModules>,
+}
 
 #[derive(Debug, Clone)]
 pub struct Use {
@@ -59,14 +78,6 @@ impl Typename for QualifiedType {
     fn typename(&self) -> String {
         self.to_string()
     }
-}
-
-#[derive(Debug, Default, Clone)]
-pub struct Ast {
-    pub use_statements: Vec<Use>,
-    pub enums: Vec<Enum>,
-    pub registers: Vec<Register>,
-    pub blocks: Vec<Block>,
 }
 
 pub trait Emit {
@@ -236,13 +247,6 @@ impl Emit for Ast {
 
         Ok(())
     }
-}
-
-/// A set of ASTs indexed by module name
-#[derive(Debug)]
-pub struct AstModules {
-    pub root: Ast,
-    pub used: BTreeMap<String, AstModules>,
 }
 
 #[cfg(test)]
