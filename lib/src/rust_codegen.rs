@@ -1,8 +1,12 @@
 //! Rust code generation
 
 use crate::ast::{Identifier, Number};
-use crate::common::{Alternative, Attribute, FieldMode, NumberFormat, Typename};
-use crate::model::{Block, Component, Field, FieldType, FieldUserType, Register};
+use crate::common::{
+    Alternative, Attribute, FieldMode, NumberFormat, Typename,
+};
+use crate::model::{
+    Block, Component, Field, FieldType, FieldUserType, Register,
+};
 use crate::model::{ModelModules, QualifiedFieldType, Visitor};
 use anyhow::{Result, anyhow};
 use camino::Utf8Path;
@@ -635,9 +639,32 @@ fn width_to_value_type(width: u128) -> Option<TokenStream> {
 pub fn codegen(file: &Utf8Path, addr_type: AddrType) -> Result<String> {
     let ast = crate::parser::parse(file)?;
     let resolved = ModelModules::resolve(&ast, String::default())?;
-    let mut tokens = generate_module_tokens(&resolved, addr_type)?;
-    tokens.extend(generate_regdb_tokens(&resolved, addr_type));
+    let tokens = generate_module_tokens(&resolved, addr_type)?;
 
+    let file: syn::File = syn::parse2(tokens.clone()).map_err(|e| {
+        let generated = tokens
+            .to_string()
+            .replace(";", ";\n")
+            .replace("{", "{\n")
+            .replace("}", "}\n");
+
+        let tmp = NamedUtf8TempFile::new().unwrap();
+        let (mut file, path) = tmp.keep().unwrap();
+        file.write_all(generated.as_bytes()).unwrap();
+        anyhow!(
+            "token parsing failed: {e:#?}, rust source file written to {}.
+            Try running rustfmt over that file to see whare the issues are.",
+            path,
+        )
+    })?;
+    let code = prettyplease::unparse(&file);
+    Ok(code)
+}
+
+pub fn regdb_codegen(file: &Utf8Path, addr_type: AddrType) -> Result<String> {
+    let ast = crate::parser::parse(file)?;
+    let resolved = ModelModules::resolve(&ast, String::default())?;
+    let tokens = generate_regdb_tokens(&resolved, addr_type);
     let file: syn::File = syn::parse2(tokens.clone()).map_err(|e| {
         let generated = tokens
             .to_string()

@@ -12,6 +12,7 @@ use std::{
 
 /// A register db entry. T should be u8, u16, u32, or u64. But there is not a
 /// way to express this constraint that I am aware of.
+#[derive(Clone)]
 pub struct Entry<T: Copy + Eq + Hash> {
     pub name: String,
     pub address: T,
