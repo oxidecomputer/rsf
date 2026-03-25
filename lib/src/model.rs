@@ -843,6 +843,68 @@ impl Register {
             v.field(f);
         }
     }
+
+    pub fn show_value(&self, value: impl Into<u64>) {
+        let value = value.into();
+        let hex_width = (self.width.value as usize).div_ceil(4);
+        println!(
+            "{} {}{}{}{} {} {}",
+            "register".blue(),
+            self.id.name.cyan(),
+            "<".dimmed(),
+            self.width.value.to_string().yellow(),
+            ">".dimmed(),
+            "=".dimmed(),
+            format!("0x{:0width$x}", value, width = hex_width).yellow(),
+        );
+        for field in &self.fields {
+            let width = field.typ.width();
+            let mask = if width >= 64 {
+                u64::MAX
+            } else {
+                (1u64 << width) - 1
+            };
+            let field_value = (value >> field.offset.value) & mask;
+
+            let value_str = match &field.typ {
+                FieldType::Bool => {
+                    if field_value != 0 {
+                        "true".to_string()
+                    } else {
+                        "false".to_string()
+                    }
+                }
+                FieldType::Bitfield { width } => {
+                    let hw = (width.value as usize).div_ceil(4);
+                    format!("0x{:0width$x}", field_value, width = hw)
+                }
+                FieldType::User { id } => {
+                    let FieldUserType::Enum(e) = &id.typ;
+                    let alt = e
+                        .alternatives
+                        .iter()
+                        .find(|a| a.value.value == field_value as u128);
+                    if let Some(alt) = alt {
+                        format!("{} (0x{:x})", alt.id.name, field_value)
+                    } else {
+                        format!("0x{:x}", field_value)
+                    }
+                }
+            };
+
+            println!(
+                "  {}{} {} {} {}{} {} {}",
+                field.id.name,
+                ":".dimmed(),
+                field.mode.to_string().blue(),
+                field.typ,
+                "@".dimmed(),
+                field.offset.value.to_string().yellow(),
+                "=".dimmed(),
+                value_str.green(),
+            );
+        }
+    }
 }
 
 pub trait Visitor {
