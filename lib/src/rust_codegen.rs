@@ -1,9 +1,14 @@
 //! Rust code generation
 
-use crate::ast::Number;
-use crate::common::{Attribute, FieldMode, NumberFormat, Typename};
-use crate::model::{Block, Component, FieldType, FieldUserType, Register};
-use crate::model::{ModelModules, Visitor};
+use crate::ast::{Identifier, Number};
+use crate::common::{
+    Alternative, Attribute, FieldMode, NumberFormat, Typename,
+};
+use crate::model::{
+    Block, Component, ComponentUserType, Field, FieldType, FieldUserType,
+    Register,
+};
+use crate::model::{ModelModules, QualifiedFieldType, Visitor};
 use anyhow::{Result, anyhow};
 use camino::Utf8Path;
 use camino_tempfile::NamedUtf8TempFile;
@@ -657,6 +662,30 @@ pub fn codegen(file: &Utf8Path, addr_type: AddrType) -> Result<String> {
     Ok(code)
 }
 
+pub fn regdb_codegen(file: &Utf8Path, addr_type: AddrType) -> Result<String> {
+    let ast = crate::parser::parse(file)?;
+    let resolved = ModelModules::resolve(&ast, String::default())?;
+    let tokens = generate_regdb_tokens(&resolved, addr_type);
+    let file: syn::File = syn::parse2(tokens.clone()).map_err(|e| {
+        let generated = tokens
+            .to_string()
+            .replace(";", ";\n")
+            .replace("{", "{\n")
+            .replace("}", "}\n");
+
+        let tmp = NamedUtf8TempFile::new().unwrap();
+        let (mut file, path) = tmp.keep().unwrap();
+        file.write_all(generated.as_bytes()).unwrap();
+        anyhow!(
+            "token parsing failed: {e:#?}, rust source file written to {}.
+            Try running rustfmt over that file to see whare the issues are.",
+            path,
+        )
+    })?;
+    let code = prettyplease::unparse(&file);
+    Ok(code)
+}
+
 /// Generate tokens for a module and all of its sub-modules by walking the
 /// `ModelModules` tree directly. Each used module becomes a nested `pub mod`
 /// block, which correctly handles the case where different subtrees contain
@@ -777,4 +806,412 @@ fn attrs_accessor(
             &[#attrs]
         }
     }
+}
+
+// --- Register DB code generation ---
+
+fn generate_regdb_tokens(
+    model: &ModelModules,
+    addr_type: AddrType,
+) -> TokenStream {
+    let addr_type_ts: TokenStream = addr_type.into();
+
+    let main_block = model.root.blocks.iter().find(|b| b.id.name == "Main");
+
+    let Some(main_block) = main_block else {
+        return quote! {
+            pub fn regdb() -> rsf::db::RegisterDb<#addr_type_ts> {
+                rsf::db::RegisterDb::new()
+            }
+        };
+    };
+
+    // Collect unique registers and blocks reachable from Main.
+    let mut unique_regs: Vec<Arc<Register>> = Vec::new();
+    let mut reg_ptr_to_idx: BTreeMap<usize, usize> = BTreeMap::new();
+    let mut unique_blocks: Vec<Arc<Block>> = Vec::new();
+    let mut block_ptr_to_idx: BTreeMap<usize, usize> = BTreeMap::new();
+
+    collect_regdb_unique_items(
+        main_block,
+        &mut unique_regs,
+        &mut reg_ptr_to_idx,
+        &mut unique_blocks,
+        &mut block_ptr_to_idx,
+    );
+
+    let mut helpers = TokenStream::new();
+
+    // Generate a constructor function for each unique register type.
+    for (idx, reg) in unique_regs.iter().enumerate() {
+        let fn_name = format_ident!("__regdb_reg_{}", idx);
+        let reg_tokens = register_construct_tokens(reg);
+        helpers.extend(quote! {
+            fn #fn_name() -> rsf::model::Register {
+                #reg_tokens
+            }
+        });
+    }
+
+    // Generate a population function for each unique block.
+    for (idx, block) in unique_blocks.iter().enumerate() {
+        let fn_name = format_ident!("__regdb_block_{}", idx);
+        let body = generate_regdb_block_body(
+            block,
+            &addr_type_ts,
+            &reg_ptr_to_idx,
+            &block_ptr_to_idx,
+        );
+        helpers.extend(quote! {
+            fn #fn_name(
+                db: &mut rsf::db::RegisterDb<#addr_type_ts>,
+                base: u128,
+                prefix: &str,
+            ) {
+                #body
+            }
+        });
+    }
+
+    let main_idx = block_ptr_to_idx[&(Arc::as_ptr(main_block) as usize)];
+    let main_fn = format_ident!("__regdb_block_{}", main_idx);
+
+    quote! {
+        #helpers
+        pub fn regdb() -> rsf::db::RegisterDb<#addr_type_ts> {
+            let mut db = rsf::db::RegisterDb::new();
+            #main_fn(&mut db, 0, "");
+            db
+        }
+    }
+}
+
+/// Recursively collect all unique registers and blocks reachable from
+/// a block, deduplicating by `Arc` pointer identity.
+fn collect_regdb_unique_items(
+    block: &Arc<Block>,
+    regs: &mut Vec<Arc<Register>>,
+    reg_map: &mut BTreeMap<usize, usize>,
+    blocks: &mut Vec<Arc<Block>>,
+    block_map: &mut BTreeMap<usize, usize>,
+) {
+    let ptr = Arc::as_ptr(block) as usize;
+    if block_map.contains_key(&ptr) {
+        return;
+    }
+    let idx = blocks.len();
+    blocks.push(block.clone());
+    block_map.insert(ptr, idx);
+
+    for element in &block.elements {
+        let typ = match &element.component {
+            Component::Single { typ, .. } | Component::Array { typ, .. } => typ,
+        };
+        match &typ.typ {
+            ComponentUserType::Register(reg) => {
+                let ptr = Arc::as_ptr(reg) as usize;
+                reg_map.entry(ptr).or_insert_with(|| {
+                    let idx = regs.len();
+                    regs.push(reg.clone());
+                    idx
+                });
+            }
+            ComponentUserType::Block(sub) => {
+                collect_regdb_unique_items(
+                    sub, regs, reg_map, blocks, block_map,
+                );
+            }
+        }
+    }
+}
+
+/// Generate the body of a block population function. Each element in
+/// the block produces either a direct `db.insert_unique(...)` (for
+/// registers) or a call to another block's population function. Array
+/// components become for-loops instead of being unrolled.
+fn generate_regdb_block_body(
+    block: &Block,
+    addr_type_ts: &TokenStream,
+    reg_map: &BTreeMap<usize, usize>,
+    block_map: &BTreeMap<usize, usize>,
+) -> TokenStream {
+    let mut body = TokenStream::new();
+
+    for element in &block.elements {
+        let elem_offset =
+            proc_macro2::Literal::u128_unsuffixed(element.offset.value);
+
+        match &element.component {
+            Component::Single { id, typ } => {
+                let name = &id.name;
+                match &typ.typ {
+                    ComponentUserType::Register(reg) => {
+                        let idx = reg_map[&(Arc::as_ptr(reg) as usize)];
+                        let reg_fn = format_ident!("__regdb_reg_{}", idx);
+                        body.extend(quote! {
+                            let _ = db.insert_unique(rsf::db::Entry {
+                                name: if prefix.is_empty() {
+                                    String::from(#name)
+                                } else {
+                                    format!("{}.{}", prefix, #name)
+                                },
+                                address: (base + #elem_offset) as #addr_type_ts,
+                                register: #reg_fn(),
+                            });
+                        });
+                    }
+                    ComponentUserType::Block(sub) => {
+                        let idx = block_map[&(Arc::as_ptr(sub) as usize)];
+                        let sub_fn = format_ident!("__regdb_block_{}", idx);
+                        body.extend(quote! {
+                            {
+                                let sub_prefix = if prefix.is_empty() {
+                                    String::from(#name)
+                                } else {
+                                    format!("{}.{}", prefix, #name)
+                                };
+                                #sub_fn(db, base + #elem_offset, &sub_prefix);
+                            }
+                        });
+                    }
+                }
+            }
+            Component::Array {
+                id,
+                typ,
+                length,
+                spacing,
+            } => {
+                let name = &id.name;
+                let len = proc_macro2::Literal::u128_unsuffixed(length.value);
+                let stride =
+                    proc_macro2::Literal::u128_unsuffixed(spacing.value);
+                match &typ.typ {
+                    ComponentUserType::Register(reg) => {
+                        let idx = reg_map[&(Arc::as_ptr(reg) as usize)];
+                        let reg_fn = format_ident!("__regdb_reg_{}", idx);
+                        body.extend(quote! {
+                            for __i in 0u128..#len {
+                                let _ = db.insert_unique(rsf::db::Entry {
+                                    name: if prefix.is_empty() {
+                                        format!("{}.{}", #name, __i)
+                                    } else {
+                                        format!("{}.{}.{}", prefix, #name, __i)
+                                    },
+                                    address: (base + #elem_offset + __i * #stride)
+                                        as #addr_type_ts,
+                                    register: #reg_fn(),
+                                });
+                            }
+                        });
+                    }
+                    ComponentUserType::Block(sub) => {
+                        let idx = block_map[&(Arc::as_ptr(sub) as usize)];
+                        let sub_fn = format_ident!("__regdb_block_{}", idx);
+                        body.extend(quote! {
+                            for __i in 0u128..#len {
+                                let sub_prefix = if prefix.is_empty() {
+                                    format!("{}.{}", #name, __i)
+                                } else {
+                                    format!("{}.{}.{}", prefix, #name, __i)
+                                };
+                                #sub_fn(
+                                    db,
+                                    base + #elem_offset + __i * #stride,
+                                    &sub_prefix,
+                                );
+                            }
+                        });
+                    }
+                }
+            }
+        }
+    }
+
+    body
+}
+
+fn register_construct_tokens(reg: &Register) -> TokenStream {
+    let doc = string_vec_tokens(&reg.doc);
+    let id = ident_construct_tokens(&reg.id);
+    let width = number_construct_tokens(&reg.width);
+    let reset_value = match &reg.reset_value {
+        None => quote! { None },
+        Some(n) => {
+            let n = number_construct_tokens(n);
+            quote! { Some(#n) }
+        }
+    };
+    let sram = reg.sram;
+    let fields: Vec<TokenStream> =
+        reg.fields.iter().map(field_construct_tokens).collect();
+    let attrs: Vec<TokenStream> =
+        reg.attrs.iter().map(attr_construct_tokens).collect();
+
+    quote! {
+        rsf::model::Register {
+            doc: #doc,
+            id: #id,
+            width: #width,
+            reset_value: #reset_value,
+            sram: #sram,
+            fields: vec![#(#fields),*],
+            attrs: vec![#(#attrs),*],
+        }
+    }
+}
+
+fn field_construct_tokens(f: &Field) -> TokenStream {
+    let doc = string_vec_tokens(&f.doc);
+    let id = ident_construct_tokens(&f.id);
+    let mode = field_mode_construct_tokens(&f.mode);
+    let typ = field_type_construct_tokens(&f.typ);
+    let offset = number_construct_tokens(&f.offset);
+    let attrs: Vec<TokenStream> =
+        f.attrs.iter().map(attr_construct_tokens).collect();
+
+    quote! {
+        rsf::model::Field {
+            doc: #doc,
+            id: #id,
+            mode: #mode,
+            typ: #typ,
+            offset: #offset,
+            attrs: vec![#(#attrs),*],
+        }
+    }
+}
+
+fn field_type_construct_tokens(typ: &FieldType) -> TokenStream {
+    match typ {
+        FieldType::Bool => quote! { rsf::model::FieldType::Bool },
+        FieldType::Bitfield { width } => {
+            let w = number_construct_tokens(width);
+            quote! { rsf::model::FieldType::Bitfield { width: #w } }
+        }
+        FieldType::User { id } => {
+            let qft = qualified_field_type_construct_tokens(id);
+            quote! { rsf::model::FieldType::User { id: #qft } }
+        }
+    }
+}
+
+fn qualified_field_type_construct_tokens(
+    qft: &QualifiedFieldType,
+) -> TokenStream {
+    let module_path: Vec<TokenStream> = qft
+        .module_path
+        .iter()
+        .map(|s| quote! { String::from(#s) })
+        .collect();
+    let typ = field_user_type_construct_tokens(&qft.typ);
+    quote! {
+        rsf::model::QualifiedFieldType {
+            module_path: vec![#(#module_path),*],
+            typ: #typ,
+        }
+    }
+}
+
+fn field_user_type_construct_tokens(fut: &FieldUserType) -> TokenStream {
+    match fut {
+        FieldUserType::Enum(e) => {
+            let e = enum_construct_tokens(e);
+            quote! {
+                rsf::model::FieldUserType::Enum(std::sync::Arc::new(#e))
+            }
+        }
+    }
+}
+
+fn enum_construct_tokens(e: &crate::common::Enum) -> TokenStream {
+    let doc = string_vec_tokens(&e.doc);
+    let id = ident_construct_tokens(&e.id);
+    let width = number_construct_tokens(&e.width);
+    let alts: Vec<TokenStream> =
+        e.alternatives.iter().map(alt_construct_tokens).collect();
+    let attrs: Vec<TokenStream> =
+        e.attrs.iter().map(attr_construct_tokens).collect();
+
+    quote! {
+        rsf::common::Enum {
+            doc: #doc,
+            id: #id,
+            width: #width,
+            alternatives: vec![#(#alts),*],
+            attrs: vec![#(#attrs),*],
+        }
+    }
+}
+
+fn alt_construct_tokens(a: &Alternative) -> TokenStream {
+    let doc = string_vec_tokens(&a.doc);
+    let id = ident_construct_tokens(&a.id);
+    let value = number_construct_tokens(&a.value);
+
+    quote! {
+        rsf::common::Alternative {
+            doc: #doc,
+            id: #id,
+            value: #value,
+        }
+    }
+}
+
+fn ident_construct_tokens(id: &Identifier) -> TokenStream {
+    let name = &id.name;
+    quote! { rsf::common::Identifier::new(#name) }
+}
+
+fn number_construct_tokens(n: &Number) -> TokenStream {
+    let value = proc_macro2::Literal::u128_unsuffixed(n.value);
+    let format = match &n.format {
+        NumberFormat::Binary { digits } => {
+            let d = *digits;
+            quote! { rsf::common::NumberFormat::Binary { digits: #d } }
+        }
+        NumberFormat::Hex { digits } => {
+            let d = *digits;
+            quote! { rsf::common::NumberFormat::Hex { digits: #d } }
+        }
+        NumberFormat::Decimal { digits } => {
+            let d = *digits;
+            quote! { rsf::common::NumberFormat::Decimal { digits: #d } }
+        }
+    };
+    quote! { rsf::common::Number::new(#value, #format) }
+}
+
+fn field_mode_construct_tokens(mode: &FieldMode) -> TokenStream {
+    match mode {
+        FieldMode::ReadOnly => {
+            quote! { rsf::common::FieldMode::ReadOnly }
+        }
+        FieldMode::WriteOnly => {
+            quote! { rsf::common::FieldMode::WriteOnly }
+        }
+        FieldMode::ReadWrite => {
+            quote! { rsf::common::FieldMode::ReadWrite }
+        }
+        FieldMode::Reserved => {
+            quote! { rsf::common::FieldMode::Reserved }
+        }
+    }
+}
+
+fn attr_construct_tokens(attr: &Attribute) -> TokenStream {
+    let id = ident_construct_tokens(&attr.id);
+    let value = &attr.value;
+    quote! {
+        rsf::common::Attribute {
+            id: #id,
+            value: String::from(#value),
+        }
+    }
+}
+
+fn string_vec_tokens(v: &[String]) -> TokenStream {
+    let items: Vec<TokenStream> =
+        v.iter().map(|s| quote! { String::from(#s) }).collect();
+    quote! { vec![#(#items),*] }
 }

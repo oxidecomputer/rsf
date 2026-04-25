@@ -1,6 +1,5 @@
 pub use crate::common::Attribute;
 pub use crate::common::Enum;
-
 use crate::{
     ast::{self, AstModules, Identifier, Number},
     common::Typename,
@@ -14,13 +13,31 @@ use std::{
     sync::Arc,
 };
 
-//pub type Type = crate::common::Type<QualifiedType>;
+// The following are types that comprise a resolved AST. Resolved means
+// that user-defined type references have been resolved to their underlying
+// definitions.
+
 pub type Block = crate::common::Block<QualifiedComponentType>;
 pub type BlockElement = crate::common::BlockElement<QualifiedComponentType>;
 pub type Component = crate::common::Component<QualifiedComponentType>;
 pub type FieldType = crate::common::FieldType<QualifiedFieldType>;
 pub type Register = crate::common::Register<FieldType>;
 pub type Field = crate::common::Field<FieldType>;
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct Model {
+    pub id: String,
+    pub enums: Vec<Arc<Enum>>,
+    pub registers: Vec<Arc<Register>>,
+    pub blocks: Vec<Arc<Block>>,
+    pub attrs: Vec<Arc<Attribute>>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ModelModules {
+    pub root: Model,
+    pub used: BTreeMap<String, Arc<ModelModules>>,
+}
 
 impl FieldType {
     pub fn width(&self) -> u128 {
@@ -69,21 +86,6 @@ impl Typename for ComponentUserType {
             Self::Block(x) => x.id.name.clone(),
         }
     }
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct Model {
-    pub id: String,
-    pub enums: Vec<Arc<Enum>>,
-    pub registers: Vec<Arc<Register>>,
-    pub blocks: Vec<Arc<Block>>,
-    pub attrs: Vec<Arc<Attribute>>,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct ModelModules {
-    pub root: Model,
-    pub used: BTreeMap<String, Arc<ModelModules>>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -839,6 +841,68 @@ impl Register {
     pub fn accept<V: Visitor>(&self, v: &mut V) {
         for f in &self.fields {
             v.field(f);
+        }
+    }
+
+    pub fn show_value(&self, value: impl Into<u64>) {
+        let value = value.into();
+        let hex_width = (self.width.value as usize).div_ceil(4);
+        println!(
+            "{} {}{}{}{} {} {}",
+            "register".blue(),
+            self.id.name.cyan(),
+            "<".dimmed(),
+            self.width.value.to_string().yellow(),
+            ">".dimmed(),
+            "=".dimmed(),
+            format!("0x{:0width$x}", value, width = hex_width).yellow(),
+        );
+        for field in &self.fields {
+            let width = field.typ.width();
+            let mask = if width >= 64 {
+                u64::MAX
+            } else {
+                (1u64 << width) - 1
+            };
+            let field_value = (value >> field.offset.value) & mask;
+
+            let value_str = match &field.typ {
+                FieldType::Bool => {
+                    if field_value != 0 {
+                        "true".to_string()
+                    } else {
+                        "false".to_string()
+                    }
+                }
+                FieldType::Bitfield { width } => {
+                    let hw = (width.value as usize).div_ceil(4);
+                    format!("0x{:0width$x}", field_value, width = hw)
+                }
+                FieldType::User { id } => {
+                    let FieldUserType::Enum(e) = &id.typ;
+                    let alt = e
+                        .alternatives
+                        .iter()
+                        .find(|a| a.value.value == field_value as u128);
+                    if let Some(alt) = alt {
+                        format!("{} (0x{:x})", alt.id.name, field_value)
+                    } else {
+                        format!("0x{:x}", field_value)
+                    }
+                }
+            };
+
+            println!(
+                "  {}{} {} {} {}{} {} {}",
+                field.id.name,
+                ":".dimmed(),
+                field.mode.to_string().blue(),
+                field.typ,
+                "@".dimmed(),
+                field.offset.value.to_string().yellow(),
+                "=".dimmed(),
+                value_str.green(),
+            );
         }
     }
 }
