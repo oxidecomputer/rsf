@@ -296,12 +296,31 @@ impl Visitor for CodegenVisitor {
                         platform.read(self.addr)
                     }
 
+                    fn read_raw<
+                        P: rust_rpi::Platform<#addr_type, #value_type>,
+                    >(
+                        &self,
+                        platform: &P,
+                    ) -> Result<#value_type, P::Error> {
+                        platform.read(self.addr).into()
+                    }
+
                     fn write<
                         P: rust_rpi::Platform<#addr_type, #value_type>,
                     >(
                         &self,
                         platform: &P,
                         value: Self::Register,
+                    ) -> Result<(), P::Error> {
+                        platform.write(self.addr, value)
+                    }
+
+                    fn write_raw<
+                        P: rust_rpi::Platform<#addr_type, #value_type>,
+                    >(
+                        &self,
+                        platform: &P,
+                        value: #value_type,
                     ) -> Result<(), P::Error> {
                         platform.write(self.addr, value)
                     }

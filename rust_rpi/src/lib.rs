@@ -69,11 +69,24 @@ pub trait RegisterInstance<AddrType, ValueType> {
         platform: &P,
     ) -> Result<Self::Register, P::Error>;
 
+    /// Read the value of this register instance and return it as a raw word.
+    fn read_raw<P: Platform<AddrType, ValueType>>(
+        &self,
+        platform: &P,
+    ) -> Result<AddrType, P::Error>;
+
     /// Write a value to this register instance.
     fn write<P: Platform<AddrType, ValueType>>(
         &self,
         platform: &P,
         value: Self::Register,
+    ) -> Result<(), P::Error>;
+
+    /// Write a raw value to this register instance.
+    fn write_raw<P: Platform<AddrType, ValueType>>(
+        &self,
+        platform: &P,
+        value: ValueType,
     ) -> Result<(), P::Error>;
 
     /// operation starts with a register initialized to the reset value, and

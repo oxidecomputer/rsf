@@ -101,10 +101,23 @@ impl rust_rpi::RegisterInstance<u32, u32> for PhyConfigInstance {
     ) -> Result<Self::Register, P::Error> {
         platform.read(self.addr)
     }
+    fn read_raw<P: rust_rpi::Platform<u32, u32>>(
+        &self,
+        platform: &P,
+    ) -> Result<u32, P::Error> {
+        platform.read(self.addr).into()
+    }
     fn write<P: rust_rpi::Platform<u32, u32>>(
         &self,
         platform: &P,
         value: Self::Register,
+    ) -> Result<(), P::Error> {
+        platform.write(self.addr, value)
+    }
+    fn write_raw<P: rust_rpi::Platform<u32, u32>>(
+        &self,
+        platform: &P,
+        value: u32,
     ) -> Result<(), P::Error> {
         platform.write(self.addr, value)
     }
@@ -220,10 +233,23 @@ impl rust_rpi::RegisterInstance<u32, u32> for PhyStatusInstance {
     ) -> Result<Self::Register, P::Error> {
         platform.read(self.addr)
     }
+    fn read_raw<P: rust_rpi::Platform<u32, u32>>(
+        &self,
+        platform: &P,
+    ) -> Result<u32, P::Error> {
+        platform.read(self.addr).into()
+    }
     fn write<P: rust_rpi::Platform<u32, u32>>(
         &self,
         platform: &P,
         value: Self::Register,
+    ) -> Result<(), P::Error> {
+        platform.write(self.addr, value)
+    }
+    fn write_raw<P: rust_rpi::Platform<u32, u32>>(
+        &self,
+        platform: &P,
+        value: u32,
     ) -> Result<(), P::Error> {
         platform.write(self.addr, value)
     }
@@ -351,10 +377,23 @@ impl rust_rpi::RegisterInstance<u32, u32> for DebugInstance {
     ) -> Result<Self::Register, P::Error> {
         platform.read(self.addr)
     }
+    fn read_raw<P: rust_rpi::Platform<u32, u32>>(
+        &self,
+        platform: &P,
+    ) -> Result<u32, P::Error> {
+        platform.read(self.addr).into()
+    }
     fn write<P: rust_rpi::Platform<u32, u32>>(
         &self,
         platform: &P,
         value: Self::Register,
+    ) -> Result<(), P::Error> {
+        platform.write(self.addr, value)
+    }
+    fn write_raw<P: rust_rpi::Platform<u32, u32>>(
+        &self,
+        platform: &P,
+        value: u32,
     ) -> Result<(), P::Error> {
         platform.write(self.addr, value)
     }
@@ -777,10 +816,23 @@ pub mod ethernet {
             ) -> Result<Self::Register, P::Error> {
                 platform.read(self.addr)
             }
+            fn read_raw<P: rust_rpi::Platform<u32, u32>>(
+                &self,
+                platform: &P,
+            ) -> Result<u32, P::Error> {
+                platform.read(self.addr).into()
+            }
             fn write<P: rust_rpi::Platform<u32, u32>>(
                 &self,
                 platform: &P,
                 value: Self::Register,
+            ) -> Result<(), P::Error> {
+                platform.write(self.addr, value)
+            }
+            fn write_raw<P: rust_rpi::Platform<u32, u32>>(
+                &self,
+                platform: &P,
+                value: u32,
             ) -> Result<(), P::Error> {
                 platform.write(self.addr, value)
             }
@@ -903,10 +955,23 @@ pub mod version {
         ) -> Result<Self::Register, P::Error> {
             platform.read(self.addr)
         }
+        fn read_raw<P: rust_rpi::Platform<u32, u32>>(
+            &self,
+            platform: &P,
+        ) -> Result<u32, P::Error> {
+            platform.read(self.addr).into()
+        }
         fn write<P: rust_rpi::Platform<u32, u32>>(
             &self,
             platform: &P,
             value: Self::Register,
+        ) -> Result<(), P::Error> {
+            platform.write(self.addr, value)
+        }
+        fn write_raw<P: rust_rpi::Platform<u32, u32>>(
+            &self,
+            platform: &P,
+            value: u32,
         ) -> Result<(), P::Error> {
             platform.write(self.addr, value)
         }
