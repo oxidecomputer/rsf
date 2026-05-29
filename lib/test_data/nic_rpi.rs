@@ -84,12 +84,31 @@ impl From<PhyConfig> for u32 {
 ///Instance of a [`PhyConfig`]
 pub struct PhyConfigInstance {
     pub addr: u32,
+    pub copies: u32,
 }
-impl rust_rpi::RegisterInstance<u32, u32> for PhyConfigInstance {
-    type Register = PhyConfig;
+impl rust_rpi::RegisterInstance<u32> for PhyConfigInstance {
     fn addr(&self) -> u32 {
         self.addr
     }
+    fn width(&self) -> usize {
+        32 as usize
+    }
+    fn copies(&self) -> u32 {
+        self.copies
+    }
+}
+impl rust_rpi::RegisterData for PhyConfig {
+    fn from_bytes(bytes: &Vec<u8>) -> Result<PhyConfig, rust_rpi::OutOfRange> {
+        BitSet::<32>::try_from(bytes)
+            .map_err(|_| rust_rpi::OutOfRange::EnumValueOutOfRange)
+            .map(|b| PhyConfig(b))
+    }
+    fn to_bytes(&self) -> Vec<u8> {
+        Vec::<u8>::from(&self.0)
+    }
+}
+impl rust_rpi::RegisterAccess<u32, u32> for PhyConfigInstance {
+    type Register = PhyConfig;
     fn cons(&self) -> Self::Register {
         let mut v = Self::Register::default();
         v.reset();
@@ -216,12 +235,31 @@ impl From<PhyStatus> for u32 {
 ///Instance of a [`PhyStatus`]
 pub struct PhyStatusInstance {
     pub addr: u32,
+    pub copies: u32,
 }
-impl rust_rpi::RegisterInstance<u32, u32> for PhyStatusInstance {
-    type Register = PhyStatus;
+impl rust_rpi::RegisterInstance<u32> for PhyStatusInstance {
     fn addr(&self) -> u32 {
         self.addr
     }
+    fn width(&self) -> usize {
+        32 as usize
+    }
+    fn copies(&self) -> u32 {
+        self.copies
+    }
+}
+impl rust_rpi::RegisterData for PhyStatus {
+    fn from_bytes(bytes: &Vec<u8>) -> Result<PhyStatus, rust_rpi::OutOfRange> {
+        BitSet::<32>::try_from(bytes)
+            .map_err(|_| rust_rpi::OutOfRange::EnumValueOutOfRange)
+            .map(|b| PhyStatus(b))
+    }
+    fn to_bytes(&self) -> Vec<u8> {
+        Vec::<u8>::from(&self.0)
+    }
+}
+impl rust_rpi::RegisterAccess<u32, u32> for PhyStatusInstance {
+    type Register = PhyStatus;
     fn cons(&self) -> Self::Register {
         let mut v = Self::Register::default();
         v.reset();
@@ -298,7 +336,7 @@ impl core::fmt::Display for PhyStatus {
         Ok(())
     }
 }
-#[derive(Debug, Default)]
+#[derive(Debug)]
 /// Metadata value
 pub struct Metadata([u8; 32]);
 impl Metadata {
@@ -310,7 +348,7 @@ impl Metadata {
 pub struct MetadataInstance {
     pub msel_id: u32,
 }
-#[derive(Debug, Default)]
+#[derive(Debug)]
 /// Firmware instruction
 pub struct FirmwareInstruction([u8; 32]);
 impl FirmwareInstruction {
@@ -360,12 +398,31 @@ impl From<Debug> for u32 {
 ///Instance of a [`Debug`]
 pub struct DebugInstance {
     pub addr: u32,
+    pub copies: u32,
 }
-impl rust_rpi::RegisterInstance<u32, u32> for DebugInstance {
-    type Register = Debug;
+impl rust_rpi::RegisterInstance<u32> for DebugInstance {
     fn addr(&self) -> u32 {
         self.addr
     }
+    fn width(&self) -> usize {
+        32 as usize
+    }
+    fn copies(&self) -> u32 {
+        self.copies
+    }
+}
+impl rust_rpi::RegisterData for Debug {
+    fn from_bytes(bytes: &Vec<u8>) -> Result<Debug, rust_rpi::OutOfRange> {
+        BitSet::<32>::try_from(bytes)
+            .map_err(|_| rust_rpi::OutOfRange::EnumValueOutOfRange)
+            .map(|b| Debug(b))
+    }
+    fn to_bytes(&self) -> Vec<u8> {
+        Vec::<u8>::from(&self.0)
+    }
+}
+impl rust_rpi::RegisterAccess<u32, u32> for DebugInstance {
+    type Register = Debug;
     fn cons(&self) -> Self::Register {
         let mut v = Self::Register::default();
         v.reset();
@@ -485,22 +542,26 @@ impl Lanes {
 #[derive(Default, Debug)]
 pub struct PhyInstance {
     pub addr: u32,
+    pub copies: u32,
 }
 /// Firmware block
 #[derive(Default, Debug)]
 pub struct FirmwareInstance {
     pub addr: u32,
+    pub copies: u32,
 }
 /// Register programming interface for this NIC.
 #[derive(Default, Debug)]
 pub struct Client {
     pub addr: u32,
+    pub copies: u32,
 }
 impl Client {
     /// The NIC's version info
     pub fn version(&self) -> version::VersionInfoInstance {
         version::VersionInfoInstance {
             addr: self.addr + 0x100,
+            copies: 1,
         }
     }
     pub fn version_attrs(&self) -> &'static [(&'static str, &'static str)] {
@@ -513,6 +574,7 @@ impl Client {
         }
         Ok(PhyInstance {
             addr: self.addr + 0x6000 + (index * 0x1000),
+            copies: 4,
         })
     }
     pub fn phys_attrs(&self) -> &'static [(&'static str, &'static str)] {
@@ -522,6 +584,7 @@ impl Client {
     pub fn firmware(&self) -> FirmwareInstance {
         FirmwareInstance {
             addr: self.addr + 0x10000,
+            copies: 1,
         }
     }
     pub fn firmware_attrs(&self) -> &'static [(&'static str, &'static str)] {
@@ -557,6 +620,7 @@ impl PhyInstance {
     pub fn version(&self) -> version::VersionInfoInstance {
         version::VersionInfoInstance {
             addr: self.addr,
+            copies: 1,
         }
     }
     pub fn version_attrs(&self) -> &'static [(&'static str, &'static str)] {
@@ -566,6 +630,7 @@ impl PhyInstance {
     pub fn debug(&self) -> DebugInstance {
         DebugInstance {
             addr: self.addr + 0x10,
+            copies: 1,
         }
     }
     pub fn debug_attrs(&self) -> &'static [(&'static str, &'static str)] {
@@ -575,6 +640,7 @@ impl PhyInstance {
     pub fn config(&self) -> PhyConfigInstance {
         PhyConfigInstance {
             addr: self.addr + 0x200,
+            copies: 1,
         }
     }
     pub fn config_attrs(&self) -> &'static [(&'static str, &'static str)] {
@@ -584,6 +650,7 @@ impl PhyInstance {
     pub fn status(&self) -> PhyStatusInstance {
         PhyStatusInstance {
             addr: self.addr + 0x400,
+            copies: 1,
         }
     }
     pub fn status_attrs(&self) -> &'static [(&'static str, &'static str)] {
@@ -747,12 +814,14 @@ pub mod ethernet {
     #[derive(Default, Debug)]
     pub struct TestInstance {
         pub addr: u32,
+        pub copies: u32,
     }
     impl TestInstance {
         /// version info
         pub fn version(&self) -> version::VersionInfoInstance {
             version::VersionInfoInstance {
                 addr: self.addr,
+                copies: 1,
             }
         }
         pub fn version_attrs(&self) -> &'static [(&'static str, &'static str)] {
@@ -799,12 +868,31 @@ pub mod ethernet {
         ///Instance of a [`Version`]
         pub struct VersionInstance {
             pub addr: u32,
+            pub copies: u32,
         }
-        impl rust_rpi::RegisterInstance<u32, u32> for VersionInstance {
-            type Register = Version;
+        impl rust_rpi::RegisterInstance<u32> for VersionInstance {
             fn addr(&self) -> u32 {
                 self.addr
             }
+            fn width(&self) -> usize {
+                32 as usize
+            }
+            fn copies(&self) -> u32 {
+                self.copies
+            }
+        }
+        impl rust_rpi::RegisterData for Version {
+            fn from_bytes(bytes: &Vec<u8>) -> Result<Version, rust_rpi::OutOfRange> {
+                BitSet::<32>::try_from(bytes)
+                    .map_err(|_| rust_rpi::OutOfRange::EnumValueOutOfRange)
+                    .map(|b| Version(b))
+            }
+            fn to_bytes(&self) -> Vec<u8> {
+                Vec::<u8>::from(&self.0)
+            }
+        }
+        impl rust_rpi::RegisterAccess<u32, u32> for VersionInstance {
+            type Register = Version;
             fn cons(&self) -> Self::Register {
                 let mut v = Self::Register::default();
                 v.reset();
@@ -886,11 +974,15 @@ pub mod ethernet {
         #[derive(Default, Debug)]
         pub struct VersionInfoInstance {
             pub addr: u32,
+            pub copies: u32,
         }
         impl VersionInfoInstance {
             /// Version register.
             pub fn version(&self) -> VersionInstance {
-                VersionInstance { addr: self.addr }
+                VersionInstance {
+                    addr: self.addr,
+                    copies: 1,
+                }
             }
             pub fn version_attrs(&self) -> &'static [(&'static str, &'static str)] {
                 &[]
@@ -938,12 +1030,31 @@ pub mod version {
     ///Instance of a [`Version`]
     pub struct VersionInstance {
         pub addr: u32,
+        pub copies: u32,
     }
-    impl rust_rpi::RegisterInstance<u32, u32> for VersionInstance {
-        type Register = Version;
+    impl rust_rpi::RegisterInstance<u32> for VersionInstance {
         fn addr(&self) -> u32 {
             self.addr
         }
+        fn width(&self) -> usize {
+            32 as usize
+        }
+        fn copies(&self) -> u32 {
+            self.copies
+        }
+    }
+    impl rust_rpi::RegisterData for Version {
+        fn from_bytes(bytes: &Vec<u8>) -> Result<Version, rust_rpi::OutOfRange> {
+            BitSet::<32>::try_from(bytes)
+                .map_err(|_| rust_rpi::OutOfRange::EnumValueOutOfRange)
+                .map(|b| Version(b))
+        }
+        fn to_bytes(&self) -> Vec<u8> {
+            Vec::<u8>::from(&self.0)
+        }
+    }
+    impl rust_rpi::RegisterAccess<u32, u32> for VersionInstance {
+        type Register = Version;
         fn cons(&self) -> Self::Register {
             let mut v = Self::Register::default();
             v.reset();
@@ -1025,11 +1136,15 @@ pub mod version {
     #[derive(Default, Debug)]
     pub struct VersionInfoInstance {
         pub addr: u32,
+        pub copies: u32,
     }
     impl VersionInfoInstance {
         /// Version register.
         pub fn version(&self) -> VersionInstance {
-            VersionInstance { addr: self.addr }
+            VersionInstance {
+                addr: self.addr,
+                copies: 1,
+            }
         }
         pub fn version_attrs(&self) -> &'static [(&'static str, &'static str)] {
             &[]

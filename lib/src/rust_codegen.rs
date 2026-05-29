@@ -1,5 +1,7 @@
 //! Rust code generation
 
+extern crate alloc;
+
 use crate::ast::{Identifier, Number};
 use crate::common::{
     Alternative, Attribute, FieldMode, NumberFormat, Typename,
@@ -9,6 +11,7 @@ use crate::model::{
     Register,
 };
 use crate::model::{ModelModules, QualifiedFieldType, Visitor};
+use alloc::vec::Vec;
 use anyhow::{Result, anyhow};
 use camino::Utf8Path;
 use camino_tempfile::NamedUtf8TempFile;
@@ -70,7 +73,7 @@ impl CodegenVisitor {
 
         self.register_definitions.extend(quote! {
 
-            #[derive(Debug, Default)]
+            #[derive(Debug)]
             #[doc = #doc]
             pub struct #name([u8; #width]);
 
@@ -273,13 +276,37 @@ impl Visitor for CodegenVisitor {
                     }
                 }
             };
-            let rpi = quote! {
-                impl rust_rpi::RegisterInstance<#addr_type, #value_type> for #instance_name {
-                    type Register = #name;
 
+            let rpi = quote! {
+                impl rust_rpi::RegisterInstance<#addr_type> for #instance_name {
                     fn addr(&self) -> #addr_type {
                         self.addr
                     }
+
+                    fn width(&self) -> usize {
+                        #width as usize
+                    }
+
+                    fn copies(&self) -> u32 {
+                        self.copies
+                    }
+                }
+
+                impl rust_rpi::RegisterData for #name {
+                    fn from_bytes(bytes: &Vec<u8>) ->
+                        Result<#name, rust_rpi::OutOfRange>{
+                        BitSet::<#width>::try_from(bytes)
+                            .map_err(|_|
+                                rust_rpi::OutOfRange::EnumValueOutOfRange)
+                        .map(|b| #name(b))
+                    }
+                    fn to_bytes(&self) -> Vec<u8> {
+                        Vec::<u8>::from(&self.0)
+                    }
+                }
+
+                impl rust_rpi::RegisterAccess<#addr_type, #value_type> for #instance_name {
+                    type Register = #name;
 
                     fn cons(&self) -> Self::Register {
                         let mut v = Self::Register::default();
@@ -413,6 +440,7 @@ impl Visitor for CodegenVisitor {
             #[doc = #instance_doc]
             pub struct #instance_name {
                 pub addr: #addr_type,
+                pub copies: u32
             }
 
             #rpi_impl
@@ -509,7 +537,8 @@ impl Visitor for CodegenVisitor {
             #[doc = #doc]
             #[derive(Default, Debug)]
             pub struct #block_name {
-                pub addr: #addr_type
+                pub addr: #addr_type,
+                pub copies: u32
             }
         });
 
@@ -564,6 +593,7 @@ impl Visitor for CodegenVisitor {
                             pub fn #method_name(&self) -> #type_name {
                                 #type_name {
                                     addr: self.addr #offset,
+                                    copies: 1,
                                 }
                             }
                         });
@@ -597,7 +627,8 @@ impl Visitor for CodegenVisitor {
                                 return Err(rust_rpi::OutOfRange::IndexOutOfRange);
                             }
                             Ok(#type_name {
-                                addr: self.addr #offset + (index * #spacing)
+                                addr: self.addr #offset + (index * #spacing),
+                                copies: #length,
                             })
                         }
                     });
