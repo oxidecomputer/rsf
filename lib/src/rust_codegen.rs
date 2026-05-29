@@ -274,9 +274,15 @@ impl Visitor for CodegenVisitor {
                 }
             };
             let rpi = quote! {
-                impl rust_rpi::RegisterInstance<#name, #addr_type, #value_type> for #instance_name {
-                    fn cons(&self) -> #name {
-                        let mut v = #name::default();
+                impl rust_rpi::RegisterInstance<#addr_type, #value_type> for #instance_name {
+                    type Register = #name;
+
+                    fn addr(&self) -> #addr_type {
+                        self.addr
+                    }
+
+                    fn cons(&self) -> Self::Register {
+                        let mut v = Self::Register::default();
                         v.reset();
                         v
                     }
@@ -286,8 +292,17 @@ impl Visitor for CodegenVisitor {
                     >(
                         &self,
                         platform: &P,
-                    ) -> Result<#name, P::Error> {
+                    ) -> Result<Self::Register, P::Error> {
                         platform.read(self.addr)
+                    }
+
+                    fn read_raw<
+                        P: rust_rpi::Platform<#addr_type, #value_type>,
+                    >(
+                        &self,
+                        platform: &P,
+                    ) -> Result<#value_type, P::Error> {
+                        platform.read(self.addr).into()
                     }
 
                     fn write<
@@ -295,14 +310,24 @@ impl Visitor for CodegenVisitor {
                     >(
                         &self,
                         platform: &P,
-                        value: #name,
+                        value: Self::Register,
+                    ) -> Result<(), P::Error> {
+                        platform.write(self.addr, value)
+                    }
+
+                    fn write_raw<
+                        P: rust_rpi::Platform<#addr_type, #value_type>,
+                    >(
+                        &self,
+                        platform: &P,
+                        value: #value_type,
                     ) -> Result<(), P::Error> {
                         platform.write(self.addr, value)
                     }
 
                     fn try_update<
                         P: rust_rpi::Platform<#addr_type, #value_type>,
-                        F: FnOnce(&mut #name) -> Result<(), P::Error>
+                        F: FnOnce(&mut Self::Register) -> Result<(), P::Error>
                     >(
                         &self,
                         platform: &P,
@@ -315,7 +340,7 @@ impl Visitor for CodegenVisitor {
 
                     fn update<
                         P: rust_rpi::Platform<#addr_type, #value_type>,
-                        F: FnOnce(&mut #name)
+                        F: FnOnce(&mut Self::Register)
                     >(
                         &self,
                         platform: &P,
@@ -327,13 +352,13 @@ impl Visitor for CodegenVisitor {
                     }
                     fn try_set<
                         P: rust_rpi::Platform<#addr_type, #value_type>,
-                        F: FnOnce(&mut #name) -> Result<(), P::Error>
+                        F: FnOnce(&mut Self::Register) -> Result<(), P::Error>
                     >(
                         &self,
                         platform: &P,
                         f: F,
                     ) -> Result<(), P::Error> {
-                        let mut value = #name::default();
+                        let mut value = Self::Register::default();
                         value.reset();
                         f(&mut value)?;
                         self.write(platform, value)
@@ -341,13 +366,13 @@ impl Visitor for CodegenVisitor {
 
                     fn set<
                         P: rust_rpi::Platform<#addr_type, #value_type>,
-                        F: FnOnce(&mut #name)
+                        F: FnOnce(&mut Self::Register)
                     >(
                         &self,
                         platform: &P,
                         f: F,
                     ) -> Result<(), P::Error> {
-                        let mut value = #name::default();
+                        let mut value = Self::Register::default();
                         value.reset();
                         f(&mut value);
                         self.write(platform, value)
